@@ -3,47 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Box Fit XR</title>
+<title>Rack Reach XR</title>
 <style>
   :root {
     --bg: #eef1f3; --panel: #ffffff; --fg: #1b2128; --muted: #5d6873;
-    --line: #d3d9de; --a: #e8630a; --b: #0e9fb8; --btn: #1b2128; --btnfg: #ffffff;
+    --line: #d3d9de; --u3: #e8630a; --u1: #0e9fb8; --btn: #1b2128; --btnfg: #ffffff;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #14181c; --panel: #1d2329; --fg: #e8ecef; --muted: #98a3ad;
-      --line: #2e363e; --a: #ff8a3d; --b: #3cd2ea; --btn: #e8ecef; --btnfg: #14181c; color-scheme: dark; }
+      --line: #2e363e; --u3: #ff8a3d; --u1: #3cd2ea; --btn: #e8ecef; --btnfg: #14181c; color-scheme: dark; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: grid; gap: 20px; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px; display: grid; gap: 22px; }
   h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; }
+  h2 { font-size: 14px; margin: 0; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
   .sub { margin: 2px 0 0; color: var(--muted); }
-  .boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-  fieldset { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
-    padding: 14px 16px 16px; display: grid; gap: 10px; min-width: 0; }
-  legend { font-weight: 650; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  label { display: grid; gap: 3px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  input { font: inherit; font-size: 18px; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 8px 10px; width: 100%; font-variant-numeric: tabular-nums; }
-  input:focus-visible, button:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  button { font: inherit; font-weight: 650; font-size: 18px; border: 0; border-radius: 8px; padding: 14px 22px;
+  .card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 16px; display: grid; gap: 14px; min-width: 0; }
+  .globals { display: flex; flex-wrap: wrap; gap: 14px; }
+  label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  input, select { font: inherit; font-size: 17px; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; font-variant-numeric: tabular-nums; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--u1); outline-offset: 2px; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  li { display: grid; grid-template-columns: 2.2em 5.5em 6em 1fr auto; gap: 10px; align-items: center; }
+  li .n { font-weight: 700; font-variant-numeric: tabular-nums; border-left: 4px solid var(--c); padding-left: 8px; }
+  li .mm { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  li input { width: 100%; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button { font: inherit; font-weight: 650; border: 0; border-radius: 8px; padding: 10px 16px;
     background: var(--btn); color: var(--btnfg); cursor: pointer; }
-  button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button.big { font-size: 18px; padding: 14px 22px; }
+  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button.x { background: transparent; color: var(--muted); padding: 6px 10px; font-size: 18px; }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
   #status { color: var(--muted); font-size: 14px; margin: 0; }
-  #view { height: 340px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-    background: var(--panel); touch-action: none; }
+  #view { height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); touch-action: none; }
   #view canvas { display: block; }
-  .help { border-top: 1px solid var(--line); padding-top: 12px; }
-  .help h2 { font-size: 15px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-  .help dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
-  .help dt { font-weight: 650; }
-  .help dd { margin: 0; color: var(--muted); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 15px; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+  .note { color: var(--muted); font-size: 14px; margin: 0; }
+  dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+  dt { font-weight: 650; }
+  dd { margin: 0; color: var(--muted); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -55,45 +62,54 @@
 <body>
 <main>
   <header>
-    <h1>Box Fit XR</h1>
-    <p class="sub">Two boxes at real scale. Grab them and move them around your room.</p>
+    <h1>Rack Reach XR</h1>
+    <p class="sub">Eurorack rows at real size. Sit down, grab them, and arrange them where your hands want them.</p>
   </header>
 
-  <div class="boxes">
-    <fieldset>
-      <legend><span class="dot" style="background:var(--a)"></span><input id="a-name" aria-label="Name of box A" style="font-size:16px;padding:4px 8px" value="Panel"></legend>
-      <div class="row">
-        <label for="a-w">Width mm<input id="a-w" inputmode="decimal" value="2"></label>
-        <label for="a-d">Depth mm<input id="a-d" inputmode="decimal" value="128,5"></label>
-        <label for="a-h">Height mm<input id="a-h" inputmode="decimal" value="813"></label>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend><span class="dot" style="background:var(--b)"></span><input id="b-name" aria-label="Name of box B" style="font-size:16px;padding:4px 8px" value="Box B"></legend>
-      <div class="row">
-        <label for="b-w">Width mm<input id="b-w" inputmode="decimal" value="600"></label>
-        <label for="b-d">Depth mm<input id="b-d" inputmode="decimal" value="400"></label>
-        <label for="b-h">Height mm<input id="b-h" inputmode="decimal" value="750"></label>
-      </div>
-    </fieldset>
-  </div>
+  <section class="card">
+    <div class="globals">
+      <label for="oneu">1U format
+        <select id="oneu">
+          <option value="intellijel">Intellijel 1U (39,65 mm)</option>
+          <option value="pulplogic">Pulp Logic 1U (43,18 mm)</option>
+        </select>
+      </label>
+      <label for="depth">Module depth behind panel, mm
+        <input id="depth" inputmode="decimal" size="6">
+      </label>
+    </div>
+    <h2>Rows, top to bottom</h2>
+    <ol id="rowlist"></ol>
+    <div class="actions">
+      <button id="add3" class="ghost">+ 3U row</button>
+      <button id="add1" class="ghost">+ 1U row</button>
+    </div>
+  </section>
 
   <div class="actions">
-    <button id="ar" disabled>Enter passthrough</button>
-    <button id="vr" class="secondary" disabled>Enter VR</button>
+    <button id="ar" class="big" disabled>Enter passthrough</button>
+    <button id="vr" class="big ghost" disabled>Enter VR</button>
+    <button id="reset" class="ghost">Reset layout</button>
   </div>
   <p id="status">Checking for WebXR…</p>
 
-  <div id="view" aria-label="Desktop preview of the two boxes. Drag to orbit."></div>
+  <div id="view" aria-label="Preview of the layout. The sphere is your head. Drag to orbit."></div>
 
-  <section class="help">
+  <section class="card">
+    <h2>Measured layout</h2>
+    <p class="note" id="layoutnote"></p>
+    <div class="tablewrap"><table id="layout"></table></div>
+  </section>
+
+  <section class="card">
     <h2>In the headset</h2>
     <dl>
-      <dt>Trigger or grip</dt><dd>Point at a box and hold to grab it. Boxes always stay upright.</dd>
-      <dt>Thumbstick</dt><dd>While holding: left/right turns the box, up/down pushes it away or pulls it closer.</dd>
-      <dt>A / X</dt><dd>Set the box you're pointing at (or holding) down on the floor.</dd>
-      <dt>B / Y</dt><dd>Bring both boxes back in front of you.</dd>
-      <dt>Label</dt><dd>Shows the size and how high the bottom of the box sits above the floor.</dd>
+      <dt>Trigger</dt><dd>Point at a row and hold to grab it. It follows your hand in position and angle.</dd>
+      <dt>Grip on empty space</dt><dd>Grabs every row at once, to move or turn the whole case.</dd>
+      <dt>Thumbstick</dt><dd>While holding a row: left/right tilts it back and forth, up/down pushes it away or pulls it closer.</dd>
+      <dt>A / X</dt><dd>Squares up the row you're pointing at: removes sideways roll and snaps tilt and turn to 5°.</dd>
+      <dt>B / Y</dt><dd>Sit where you'll sit, look straight ahead, press. The whole layout is placed relative to your head again.</dd>
+      <dt>Label</dt><dd>Row number, size, how far it leans back, and the height of its centre above the floor.</dd>
     </dl>
   </section>
 </main>
@@ -104,28 +120,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const $ = id => document.getElementById(id);
-const statusEl = $('status');
-const say = t => { statusEl.textContent = t; };
-const COLORS = [0xff7a1a, 0x22d3ee];
-const FIELDS = ['name', 'w', 'd', 'h'];
+const say = t => { $('status').textContent = t; };
+const HP = 5.08, H3U = 128.5, ONE_U = { intellijel: 39.65, pulplogic: 43.18 };
+const COL = { '3U': 0xff7a1a, '1U': 0x22d3ee };
+const DEG = 180 / Math.PI;
+const fmt = (n, d = 1) => String(Math.round(n * 10 ** d) / 10 ** d).replace('.', ',');
+const num = (s, def) => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) && n >= 0 ? n : def; };
 
-// ---------- persistence (per browser, optional) ----------
-try {
-  const saved = JSON.parse(localStorage.getItem('boxfit') || 'null');
-  if (saved) ['a', 'b'].forEach(k => FIELDS.forEach(f => { if (saved[k] && saved[k][f] != null) $(`${k}-${f}`).value = saved[k][f]; }));
-} catch (e) {}
-function save() {
-  try {
-    const o = {};
-    ['a', 'b'].forEach(k => { o[k] = {}; FIELDS.forEach(f => o[k][f] = $(`${k}-${f}`).value); });
-    localStorage.setItem('boxfit', JSON.stringify(o));
-  } catch (e) {}
-}
+// ---------- state ----------
+const DEFAULT = () => ({
+  oneU: 'intellijel', depth: 50, eye: null,
+  rows: ['3U', '1U', '3U', '1U', '3U', '1U', '3U', '3U'].map(type => ({ type, hp: 160 })),
+  layout: null
+});
+let state;
+try { state = JSON.parse(localStorage.getItem('rackreach') || 'null'); } catch (e) {}
+if (!state || !Array.isArray(state.rows)) state = DEFAULT();
+function save() { try { localStorage.setItem('rackreach', JSON.stringify(state)); } catch (e) {} }
 
-const num = s => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) && n > 0 ? n : 1; };
-const fmt = n => String(Math.round(n * 10) / 10).replace('.', ',');
-
-// ---------- renderer / scene ----------
+// ---------- scene ----------
 const view = $('view');
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -134,109 +147,203 @@ renderer.xr.setReferenceSpaceType('local-floor');
 view.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 50);
-camera.position.set(1.4, 1.3, 1.9);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 50);
+camera.position.set(1.3, 1.6, 0.9);
 const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0, 0.4, 0);
+orbit.target.set(0, 0.95, -0.5);
 orbit.update();
-
 scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.4));
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-sun.position.set(1, 3, 2);
-scene.add(sun);
-const grid = new THREE.GridHelper(4, 40, 0x8a949e, 0x4a525a);
-scene.add(grid);
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(1, 3, 2); scene.add(sun);
+const grid = new THREE.GridHelper(4, 40, 0x8a949e, 0x4a525a); scene.add(grid);
+
+// The anchor is the seated viewer: on the floor under the head, -Z pointing where they look.
+const anchor = new THREE.Object3D();
+scene.add(anchor);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 24, 16),
+  new THREE.MeshStandardMaterial({ color: 0x9aa4ad, transparent: true, opacity: 0.6 }));
+anchor.add(head);
 
 function resize() {
   if (renderer.xr.isPresenting) return;
-  const w = view.clientWidth, h = view.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
+  renderer.setSize(view.clientWidth, view.clientHeight);
+  camera.aspect = view.clientWidth / view.clientHeight;
   camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(view);
 
-// ---------- boxes ----------
+// ---------- rows ----------
 const unit = new THREE.BoxGeometry(1, 1, 1);
 const unitEdges = new THREE.EdgesGeometry(unit);
+let rows = [];
 
-function makeBox(i) {
-  const color = COLORS[i];
+function rowHeight(cfg) { return (cfg.type === '3U' ? H3U : ONE_U[state.oneU]) / 1000; }
+
+function makeRow(i, cfg) {
+  const color = COL[cfg.type];
   const group = new THREE.Group();
-  const fill = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({
-    color, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
-  const edges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color }));
-  // invisible, slightly fatter volume so thin panels are easy to point at
+  const face = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+  const faceEdges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color }));
+  const body = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, depthWrite: false }));
+  const bodyEdges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
   const pick = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 200;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 160;
+  const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
   label.renderOrder = 10;
-  label.scale.set(0.32, 0.0625, 1);
-  group.add(fill, edges, pick, label);
-  const box = { i, group, fill, edges, pick, label, canvas, tex, color, w: 1, d: 1, h: 1, name: '', last: '' };
-  pick.userData.box = box;
+  label.scale.set(0.28, 0.04375, 1);
+  group.add(face, faceEdges, body, bodyEdges, pick, label);
+  const r = { i, cfg, group, face, faceEdges, body, bodyEdges, pick, label, canvas, tex, color, last: '' };
+  pick.userData.row = r;
   scene.add(group);
-  return box;
+  sizeRow(r);
+  return r;
 }
-const boxes = [makeBox(0), makeBox(1)];
-boxes[0].group.position.set(-0.35, 0, 0);
-boxes[1].group.position.set(0.45, 0, 0);
 
-function applyDims() {
-  ['a', 'b'].forEach((k, i) => {
-    const b = boxes[i];
-    b.name = $(`${k}-name`).value.trim() || (i ? 'Box B' : 'Box A');
-    b.w = num($(`${k}-w`).value) / 1000;
-    b.d = num($(`${k}-d`).value) / 1000;
-    b.h = num($(`${k}-h`).value) / 1000;
-    b.fill.scale.set(b.w, b.h, b.d);
-    b.fill.position.y = b.h / 2;
-    b.edges.scale.copy(b.fill.scale);
-    b.edges.position.y = b.h / 2;
-    b.pick.scale.set(Math.max(b.w, 0.05), Math.max(b.h, 0.05), Math.max(b.d, 0.05));
-    b.pick.position.y = b.h / 2;
-    b.label.position.y = b.h + 0.06;
-    b.last = '';
+function sizeRow(r) {
+  const w = r.cfg.hp * HP / 1000, h = rowHeight(r.cfg), t = 0.002, dep = state.depth / 1000;
+  r.w = w; r.h = h;
+  r.face.scale.set(w, h, t); r.face.position.set(0, 0, -t / 2);
+  r.faceEdges.scale.copy(r.face.scale); r.faceEdges.position.copy(r.face.position);
+  r.body.visible = r.bodyEdges.visible = dep > 0;
+  r.body.scale.set(w, h * 0.85, Math.max(dep, 0.001)); r.body.position.set(0, 0, -t - dep / 2);
+  r.bodyEdges.scale.copy(r.body.scale); r.bodyEdges.position.copy(r.body.position);
+  const pd = Math.max(t + dep, 0.05);
+  r.pick.scale.set(w, Math.max(h, 0.04), pd); r.pick.position.set(0, 0, -pd / 2 + 0.01);
+  r.label.position.set(-w / 2 - 0.16, 0, 0);
+  r.last = '';
+}
+
+function defaultLocal(i) {
+  // stacked wall, 600 mm in front of the eyes, bottom row centre around 720 mm
+  let y = 0.70;
+  for (let j = state.rows.length - 1; j > i; j--) y += rowHeight(state.rows[j]) + 0.005;
+  y += rowHeight(state.rows[i]) / 2;
+  return new THREE.Matrix4().makeTranslation(0, y, -0.6);
+}
+
+const tmpS = new THREE.Vector3();
+function applyLayout() {
+  anchor.updateMatrixWorld();
+  rows.forEach((r, i) => {
+    const m = new THREE.Matrix4();
+    const saved = state.layout && state.layout[i];
+    if (saved) m.fromArray(saved);
+    else if (state.layout) m.makeTranslation(0.9, 1.0, -0.6);
+    else m.copy(defaultLocal(i));
+    m.premultiply(anchor.matrixWorld);
+    m.decompose(r.group.position, r.group.quaternion, tmpS);
+    r.group.scale.set(1, 1, 1);
+  });
+}
+
+function captureLayout() {
+  anchor.updateMatrixWorld();
+  const inv = anchor.matrixWorld.clone().invert();
+  state.layout = rows.map(r => {
+    r.group.updateMatrixWorld();
+    return new THREE.Matrix4().multiplyMatrices(inv, r.group.matrixWorld).toArray().map(v => Math.round(v * 1e5) / 1e5);
   });
   save();
+  renderTable();
 }
-['a', 'b'].forEach(k => FIELDS.forEach(f => $(`${k}-${f}`).addEventListener('input', applyDims)));
-applyDims();
 
-const tv = new THREE.Vector3();
-function drawLabel(b) {
-  b.group.getWorldPosition(tv);
-  const bottom = Math.round(tv.y * 1000);
-  const line2 = `${fmt(b.w * 1000)} × ${fmt(b.d * 1000)} × ${fmt(b.h * 1000)} mm    ↑ ${bottom} mm`;
-  const key = b.name + line2;
-  if (key === b.last) return;
-  b.last = key;
-  const c = b.canvas.getContext('2d');
-  c.clearRect(0, 0, 1024, 200);
+function rebuild() {
+  hands.forEach(release);
+  rows.forEach(r => scene.remove(r.group));
+  rows = state.rows.map((cfg, i) => makeRow(i, cfg));
+  applyLayout();
+  renderForm();
+  renderTable();
+  save();
+}
+
+// ---------- labels ----------
+const tv = new THREE.Vector3(), tq = new THREE.Quaternion(), te = new THREE.Euler();
+function drawLabel(r) {
+  r.group.getWorldPosition(tv);
+  r.group.getWorldQuaternion(tq);
+  te.setFromQuaternion(tq, 'YXZ');
+  const lean = Math.round(-te.x * DEG);
+  const text = `#${r.i + 1}  ${r.cfg.type} · ${r.cfg.hp} HP     lean ${lean}°     ↑ ${Math.round(tv.y * 1000)} mm`;
+  if (text === r.last) return;
+  r.last = text;
+  const c = r.canvas.getContext('2d');
+  c.clearRect(0, 0, 1024, 160);
   c.fillStyle = 'rgba(12,14,17,0.82)';
-  c.beginPath(); c.roundRect(0, 0, 1024, 200, 28); c.fill();
-  c.fillStyle = '#' + b.color.toString(16).padStart(6, '0');
-  c.fillRect(0, 0, 18, 200);
+  c.beginPath(); c.roundRect(0, 0, 1024, 160, 24); c.fill();
+  c.fillStyle = '#' + r.color.toString(16).padStart(6, '0');
+  c.fillRect(0, 0, 16, 160);
   c.fillStyle = '#ffffff';
-  c.font = '600 72px system-ui, sans-serif';
-  c.fillText(b.name, 48, 84);
-  c.fillStyle = '#d4dbe1';
-  c.font = '54px system-ui, sans-serif';
-  c.fillText(line2, 48, 162);
-  b.tex.needsUpdate = true;
+  c.font = '600 58px system-ui, sans-serif';
+  c.textBaseline = 'middle';
+  c.fillText(text, 40, 82);
+  r.tex.needsUpdate = true;
+}
+
+// ---------- form ----------
+$('oneu').value = state.oneU;
+$('depth').value = fmt(state.depth);
+$('oneu').addEventListener('change', e => { state.oneU = e.target.value; rows.forEach(sizeRow); renderForm(); save(); });
+$('depth').addEventListener('input', e => { state.depth = num(e.target.value, 0); rows.forEach(sizeRow); save(); });
+
+function renderForm() {
+  const ol = $('rowlist');
+  ol.innerHTML = '';
+  state.rows.forEach((cfg, i) => {
+    const li = document.createElement('li');
+    li.style.setProperty('--c', cfg.type === '3U' ? 'var(--u3)' : 'var(--u1)');
+    li.innerHTML = `<span class="n">${i + 1}</span>
+      <select id="type-${i}" aria-label="Row ${i + 1} format"><option>3U</option><option>1U</option></select>
+      <input id="hp-${i}" inputmode="numeric" aria-label="Row ${i + 1} width in HP" value="${cfg.hp}">
+      <span class="mm" id="mm-${i}"></span>
+      <button class="x" aria-label="Remove row ${i + 1}">×</button>`;
+    ol.appendChild(li);
+    const sel = li.querySelector('select'), inp = li.querySelector('input'), mm = li.querySelector('.mm');
+    const showMm = () => { mm.textContent = `HP · ${fmt(cfg.hp * HP)} × ${fmt(rowHeight(cfg) * 1000, 2)} mm`; };
+    sel.value = cfg.type;
+    showMm();
+    sel.addEventListener('change', () => { cfg.type = sel.value; rebuild(); });
+    inp.addEventListener('input', () => { cfg.hp = Math.max(1, Math.round(num(inp.value, cfg.hp))); showMm(); sizeRow(rows[i]); save(); });
+    li.querySelector('button').addEventListener('click', () => {
+      state.rows.splice(i, 1);
+      if (state.layout) state.layout.splice(i, 1);
+      rebuild();
+    });
+  });
+}
+$('add3').addEventListener('click', () => { state.rows.push({ type: '3U', hp: 160 }); rebuild(); });
+$('add1').addEventListener('click', () => { state.rows.push({ type: '1U', hp: 160 }); rebuild(); });
+$('reset').addEventListener('click', () => {
+  if (!confirm('Put all rows back in the default stack?')) return;
+  state.layout = null; rebuild();
+});
+
+function renderTable() {
+  const note = $('layoutnote');
+  if (!state.layout) {
+    note.textContent = 'Nothing measured yet. Arrange the rows in the headset; the result appears here when you leave.';
+  } else {
+    note.textContent = `Measured from the floor point under your eyes, looking straight ahead.` +
+      (state.eye ? ` Eye height when seated: ${state.eye} mm.` : '') +
+      ` Positions are row centres. Lean is how far the top tips away from you.`;
+  }
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(), e = new THREE.Euler();
+  let html = '<tr><th>Row</th><th>Format</th><th>Forward mm</th><th>Height mm</th><th>Side mm</th><th>Lean °</th><th>Turn °</th><th>Roll °</th></tr>';
+  state.rows.forEach((cfg, i) => {
+    const m = state.layout && state.layout[i] ? new THREE.Matrix4().fromArray(state.layout[i]) : defaultLocal(i);
+    m.decompose(p, q, s);
+    e.setFromQuaternion(q, 'YXZ');
+    html += `<tr><td>${i + 1}</td><td>${cfg.type} · ${cfg.hp} HP</td><td>${Math.round(-p.z * 1000)}</td><td>${Math.round(p.y * 1000)}</td>` +
+      `<td>${Math.round(p.x * 1000)}</td><td>${Math.round(-e.x * DEG)}</td><td>${Math.round(e.y * DEG)}</td><td>${Math.round(e.z * DEG)}</td></tr>`;
+  });
+  $('layout').innerHTML = html;
+  head.position.set(0, (state.eye || 1150) / 1000, 0);
 }
 
 // ---------- controllers ----------
 const factory = new XRControllerModelFactory();
 const raycaster = new THREE.Raycaster();
 const rotM = new THREE.Matrix4();
-const q = new THREE.Quaternion(), pq = new THREE.Quaternion(), yq = new THREE.Quaternion();
-const eul = new THREE.Euler();
-const UP = new THREE.Vector3(0, 1, 0);
-
 const hands = [0, 1].map(i => {
   const ctrl = renderer.xr.getController(i);
   const grip = renderer.xr.getControllerGrip(i);
@@ -247,44 +354,45 @@ const hands = [0, 1].map(i => {
   line.scale.z = 3;
   ctrl.add(line);
   scene.add(ctrl, grip);
-  const h = { ctrl, line, source: null, held: null, hover: null, prev: [] };
-  ctrl.addEventListener('connected', e => { h.source = e.data; line.visible = !!e.data.gamepad; });
+  const h = { ctrl, line, source: null, held: [], hover: null, prev: [] };
+  ctrl.addEventListener('connected', e => { h.source = e.data; });
   ctrl.addEventListener('disconnected', () => { release(h); h.source = null; });
-  ctrl.addEventListener('selectstart', () => grab(h));
+  ctrl.addEventListener('selectstart', () => grab(h, false));
   ctrl.addEventListener('selectend', () => release(h));
-  ctrl.addEventListener('squeezestart', () => grab(h));
+  ctrl.addEventListener('squeezestart', () => grab(h, true));
   ctrl.addEventListener('squeezeend', () => release(h));
   return h;
 });
 
-function grab(h) {
-  if (h.held || !h.hover) return;
-  const b = h.hover;
-  hands.forEach(o => { if (o !== h && o.held === b) release(o); });
-  h.ctrl.attach(b.group);
-  h.held = b;
+function grab(h, allowAll) {
+  if (h.held.length) return;
+  const targets = h.hover ? [h.hover] : (allowAll ? rows.slice() : []);
+  if (!targets.length) return;
+  hands.forEach(o => { if (o !== h && o.held.some(r => targets.includes(r))) release(o); });
+  targets.forEach(r => h.ctrl.attach(r.group));
+  h.held = targets;
 }
 function release(h) {
-  if (!h.held) return;
-  scene.attach(h.held.group);
-  keepUpright(h.held.group);
-  h.held = null;
-}
-function keepUpright(g, extraYaw = 0) {
-  g.getWorldQuaternion(q);
-  eul.setFromQuaternion(q, 'YXZ');
-  eul.x = 0; eul.z = 0; eul.y += extraYaw;
-  q.setFromEuler(eul);
-  g.parent.getWorldQuaternion(pq);
-  g.quaternion.copy(pq.invert().multiply(q));
-}
-function dropToFloor(b) {
-  hands.forEach(o => { if (o.held === b) release(o); });
-  b.group.position.y = 0;
+  if (!h.held.length) return;
+  h.held.forEach(r => scene.attach(r.group));
+  h.held = [];
+  captureLayout();
 }
 
-function placeInFront() {
-  hands.forEach(release);
+const aq = new THREE.Quaternion(), lq = new THREE.Quaternion(), le = new THREE.Euler();
+const SNAP = 5 / DEG;
+function squareUp(r) {
+  hands.forEach(o => { if (o.held.includes(r)) release(o); });
+  anchor.getWorldQuaternion(aq);
+  lq.copy(aq).invert().multiply(r.group.quaternion);
+  le.setFromQuaternion(lq, 'YXZ');
+  le.set(Math.round(le.x / SNAP) * SNAP, Math.round(le.y / SNAP) * SNAP, 0, 'YXZ');
+  lq.setFromEuler(le);
+  r.group.quaternion.copy(aq).multiply(lq);
+  captureLayout();
+}
+
+function placeAnchor() {
   const cam = renderer.xr.getCamera();
   const p = new THREE.Vector3(), dir = new THREE.Vector3();
   cam.getWorldPosition(p);
@@ -292,66 +400,66 @@ function placeInFront() {
   dir.y = 0;
   if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
   dir.normalize();
-  const right = new THREE.Vector3().crossVectors(dir, UP).normalize();
-  const yaw = Math.atan2(dir.x, dir.z) + Math.PI;
-  boxes.forEach((b, i) => {
-    b.group.position.copy(p).addScaledVector(dir, 1.0).addScaledVector(right, i ? 0.45 : -0.35);
-    b.group.position.y = 0;
-    b.group.rotation.set(0, yaw, 0);
-  });
+  anchor.position.set(p.x, 0, p.z);
+  anchor.rotation.set(0, Math.atan2(-dir.x, -dir.z), 0);
+  anchor.updateMatrixWorld();
+  state.eye = Math.round(p.y * 1000);
+}
+function recentre() {
+  hands.forEach(release);
+  if (state.layout) captureLayout();
+  placeAnchor();
+  applyLayout();
+  save();
 }
 
 function updateHand(h, dt) {
-  const gp = h.source && h.source.gamepad;
-  // hover
-  if (!h.held) {
+  if (!h.held.length) {
     rotM.identity().extractRotation(h.ctrl.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(h.ctrl.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotM);
-    const hits = raycaster.intersectObjects(boxes.map(b => b.pick), false);
-    h.hover = hits.length ? hits[0].object.userData.box : null;
+    const hits = raycaster.intersectObjects(rows.map(r => r.pick), false);
+    h.hover = hits.length ? hits[0].object.userData.row : null;
     h.line.scale.z = hits.length ? hits[0].distance : 3;
-  } else {
-    h.hover = h.held;
   }
+  const gp = h.source && h.source.gamepad;
   if (!gp) return;
   const ax = gp.axes.length > 3 ? gp.axes[2] : 0;
   const ay = gp.axes.length > 3 ? gp.axes[3] : 0;
-  if (h.held) {
-    const g = h.held.group;
-    if (Math.abs(ay) > 0.15) g.position.z = Math.min(-0.05, g.position.z + ay * dt * 0.9);
-    keepUpright(g, Math.abs(ax) > 0.15 ? -ax * dt * 1.6 : 0);
+  if (h.held.length) {
+    if (Math.abs(ay) > 0.15) h.held.forEach(r => { r.group.position.z = Math.min(-0.02, r.group.position.z + ay * dt * 0.8); });
+    if (Math.abs(ax) > 0.15 && h.held.length === 1) h.held[0].group.rotateX(-ax * dt * 1.0);
   }
   const pressed = gp.buttons.map(b => b.pressed);
   const edge = n => pressed[n] && !h.prev[n];
-  if (edge(4) && h.hover) dropToFloor(h.hover);   // A / X
-  if (edge(5)) placeInFront();                     // B / Y
+  if (edge(4)) { const r = h.held.length === 1 ? h.held[0] : h.hover; if (r) squareUp(r); }
+  if (edge(5)) recentre();
   h.prev = pressed;
 }
 
-// ---------- XR sessions ----------
+// ---------- sessions ----------
 let placeIn = 0;
 async function start(mode) {
-  applyDims();
   let session;
   try {
     session = await navigator.xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr',
       { requiredFeatures: ['local-floor'], optionalFeatures: ['hand-tracking'] });
-  } catch (err) {
-    say(`The headset refused the session: ${err.message}`);
-    return;
-  }
+  } catch (err) { say(`The headset refused the session: ${err.message}`); return; }
   scene.background = mode === 'vr' ? new THREE.Color(0x1e2328) : null;
   grid.visible = mode !== 'ar';
+  head.visible = false;
   orbit.enabled = false;
   await renderer.xr.setSession(session);
   placeIn = 4;
   session.addEventListener('end', () => {
     hands.forEach(release);
-    scene.background = null;
-    grid.visible = true;
-    orbit.enabled = true;
+    if (state.layout || rows.length) captureLayout();
+    anchor.position.set(0, 0, 0); anchor.rotation.set(0, 0, 0);
+    applyLayout();
+    renderTable();
+    scene.background = null; grid.visible = true; head.visible = true; orbit.enabled = true;
     resize();
+    say('Layout saved. The table below has the measurements.');
   });
 }
 $('ar').addEventListener('click', () => start('ar'));
@@ -363,25 +471,25 @@ $('vr').addEventListener('click', () => start('vr'));
   const [ar, vr] = await Promise.all([
     navigator.xr.isSessionSupported('immersive-ar').catch(() => false),
     navigator.xr.isSessionSupported('immersive-vr').catch(() => false)]);
-  $('ar').disabled = !ar;
-  $('vr').disabled = !vr;
-  say(ar ? 'Ready. Put the headset on and press Enter passthrough.'
+  $('ar').disabled = !ar; $('vr').disabled = !vr;
+  say(ar ? 'Ready. Sit down, look straight ahead, and press Enter passthrough.'
     : vr ? 'Passthrough is not available here, but VR is.'
     : 'WebXR exists but no headset was found. Open this page on the Quest.');
 })();
 
 // ---------- loop ----------
+rebuild();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (renderer.xr.isPresenting) {
-    if (placeIn > 0 && --placeIn === 0) placeInFront();
+    if (placeIn > 0 && --placeIn === 0) { placeAnchor(); applyLayout(); save(); }
     hands.forEach(h => updateHand(h, dt));
   }
-  boxes.forEach(b => {
-    const active = hands.some(h => h.hover === b || h.held === b);
-    b.fill.material.opacity = active ? 0.55 : 0.35;
-    drawLabel(b);
+  rows.forEach(r => {
+    const active = hands.some(h => h.hover === r || h.held.includes(r));
+    r.face.material.opacity = active ? 0.7 : 0.45;
+    drawLabel(r);
   });
   renderer.render(scene, camera);
 });
