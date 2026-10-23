@@ -104,8 +104,8 @@
   <section class="card">
     <h2>In the headset</h2>
     <dl>
-      <dt>The base</dt><dd>The bottom row. Grab it (trigger or grip) to move and turn the whole synth. It stays level.</dd>
-      <dt>Base + thumbstick</dt><dd>Left/right tilts the base back or forward. Up/down pushes it away or pulls it closer.</dd>
+      <dt>The base</dt><dd>The bottom row. Grab it (trigger or grip) and it moves with your hand. Turn your wrist left/right to turn the synth, tip it up/down to tilt the base. Both rotate around the base's bottom front edge. Sideways roll is ignored.</dd>
+      <dt>Base + thumbstick</dt><dd>Left/right fine-tunes the tilt. Up/down pushes the synth away or pulls it closer.</dd>
       <dt>Any other row</dt><dd>Grab it and pull towards you or push away to fold it at its hinge. Every row above it follows. Thumbstick left/right fine-tunes the fold.</dd>
       <dt>A / X</dt><dd>Snaps the fold of the row you're pointing at to the nearest 5°. On the base it also squares up the turn.</dd>
       <dt>B / Y</dt><dd>Sit where you'll sit, look straight ahead, press. The synth is placed relative to your head again.</dd>
@@ -424,10 +424,12 @@ function grab(h) {
   h.held = r;
   h.g = { dist: h.hitDist };
   if (r === base) {
-    const m = ctrlInAnchor(h);
-    h.g.off = base.pivot.position.clone().applyMatrix4(m.clone().invert());
-    h.g.yawOff = state.root.yaw - ce.y;
-    h.g.lean = state.root.lean;
+    ctrlInAnchor(h);
+    h.g.pos0 = base.pivot.position.clone();
+    h.g.cpos0 = cpos.clone();
+    h.g.yaw0 = state.root.yaw; h.g.cyaw0 = ce.y;
+    h.g.lean0 = state.root.lean; h.g.cpitch0 = ce.x;
+    h.g.push = 0; h.g.trim = 0;
   } else {
     h.g.angleOff = r.pivot.rotation.x - pointerAngle(h, r);
   }
@@ -482,13 +484,17 @@ function updateHand(h, dt) {
   const dz = v => (Math.abs(v) > 0.15 ? v : 0);
 
   if (h.held === base) {
-    if (dz(ay)) h.g.off.z = Math.min(-0.05, h.g.off.z + ay * dt * 0.8);
-    if (dz(ax)) h.g.lean = THREE.MathUtils.clamp(h.g.lean - ax * dt * 0.8, -FOLD_MAX / 2, FOLD_MAX / 2);
-    const m = ctrlInAnchor(h);
-    const p = h.g.off.clone().applyMatrix4(m);
+    // The base moves 1:1 with the hand and turns/tilts with the wrist, always around its own
+    // bottom front edge. Sideways roll is ignored, so the long edge stays level.
+    ctrlInAnchor(h);
+    if (dz(ay)) h.g.push += ay * dt * 0.8;
+    if (dz(ax)) h.g.trim -= ax * dt * 0.8;
+    const yaw = h.g.yaw0 + (ce.y - h.g.cyaw0);
+    const fwd = new THREE.Vector3(-Math.sin(ce.y), 0, -Math.cos(ce.y));
+    const p = h.g.pos0.clone().add(cpos).sub(h.g.cpos0).addScaledVector(fwd, -h.g.push);
     state.root.x = p.x; state.root.y = Math.max(0, p.y); state.root.z = p.z;
-    state.root.yaw = ce.y + h.g.yawOff;
-    state.root.lean = h.g.lean;
+    state.root.yaw = yaw;
+    state.root.lean = THREE.MathUtils.clamp(h.g.lean0 + (ce.x - h.g.cpitch0) + h.g.trim, -85 / DEG, 85 / DEG);
     applyPose();
   } else if (h.held) {
     if (dz(ax)) h.g.angleOff -= ax * dt * 0.8;
