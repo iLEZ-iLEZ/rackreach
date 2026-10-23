@@ -1,0 +1,2 @@
+Want to plan your rack build? Want to check exactly how it feels reaching for your modules in your skiff? Use my sloppily coded XR application to build your rack, angle it, then use the angles to CAD it or whatever.
+Rant: I am so so sorry for contributing more to the flood of crappy AI stuff, but I had a real problem and I couldn't solve it by myself so I used Claude. I am a 3d artist, but you wouldn't believe how hard it is to do a thing like this in any of the modern "vr tools" at our disposal.
