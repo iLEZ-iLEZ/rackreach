@@ -28,7 +28,17 @@
     border-radius: 6px; padding: 7px 9px; font-variant-numeric: tabular-nums; }
   input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--u1); outline-offset: 2px; }
   ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  li { display: grid; grid-template-columns: 2.2em 5.5em 6em 1fr auto; gap: 10px; align-items: center; }
+  li, .listhead { display: grid; grid-template-columns: 2.2em 5.5em 5.5em 5.5em 1fr auto; gap: 10px; align-items: center; }
+  .listhead { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  @media (max-width: 560px) {
+    li, .listhead { grid-template-columns: 2.2em 1fr 1fr 1fr auto; }
+    li .mm { grid-column: 2 / -1; grid-row: 2; }
+    .listhead .mmh { display: none; }
+  }
+  .codebox { width: 100%; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px; }
+  .sharerow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .sharerow input { flex: 1 1 260px; min-width: 0; }
+  #sharemsg { color: var(--muted); font-size: 14px; margin: 0; min-height: 1.5em; }
   li .n { font-weight: 700; font-variant-numeric: tabular-nums; border-left: 4px solid var(--c); padding-left: 8px; }
   li .mm { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
   li input { width: 100%; }
@@ -86,6 +96,7 @@
       <button id="clearreach" class="ghost">Clear reach marks</button>
     </div>
     <h2>Rows, top to bottom. The last row is the base.</h2>
+    <div class="listhead" aria-hidden="true"><span>#</span><span>Format</span><span>HP</span><span>Gap below</span><span class="mmh">Size</span><span></span></div>
     <ol id="rowlist"></ol>
     <div class="actions">
       <button id="add3" class="ghost">+ 3U row</button>
@@ -101,6 +112,26 @@
   <p id="status">Checking for WebXR…</p>
 
   <div id="view" aria-label="Preview of the layout. The sphere is your head. Drag to orbit."></div>
+
+  <section class="card">
+    <h2>Share and export</h2>
+    <label for="code">Layout code (rows, gaps, positions and folds)
+      <input id="code" class="codebox" readonly>
+    </label>
+    <div class="sharerow">
+      <button id="copylink">Copy link</button>
+      <button id="copycode" class="ghost">Copy code</button>
+    </div>
+    <div class="sharerow">
+      <input id="pastecode" class="codebox" aria-label="Paste a layout code or link" placeholder="Paste a code or link from someone">
+      <button id="loadcode" class="ghost">Load</button>
+    </div>
+    <div class="sharerow">
+      <button id="glbrows" class="ghost">Download GLB: rows only</button>
+      <button id="glbfull" class="ghost">Download GLB: full, with modules</button>
+    </div>
+    <p id="sharemsg"></p>
+  </section>
 
   <section class="card">
     <h2>Measured layout</h2>
@@ -128,6 +159,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const $ = id => document.getElementById(id);
 const say = t => { $('status').textContent = t; };
@@ -161,7 +193,8 @@ if (!state || !Array.isArray(state.rows)) {
 if (state.seed == null) state.seed = 1;
 if (state.showMods == null) state.showMods = true;
 if (!state.reached || typeof state.reached !== 'object') state.reached = {};
-function save() { try { localStorage.setItem('rackreach2', JSON.stringify(state)); } catch (e) {} }
+const hadSaved = (() => { try { return !!localStorage.getItem('rackreach2'); } catch (e) { return false; } })();
+function save() { try { localStorage.setItem('rackreach2', JSON.stringify(state)); } catch (e) {} if (typeof updateCode === 'function') updateCode(); }
 
 // ---------- scene ----------
 const view = $('view');
@@ -206,6 +239,7 @@ let base = null;
 
 const panelH = cfg => (cfg.type === '3U' ? PANEL['3U'] : ONE_U[state.oneU]) / 1000;
 const pitchH = cfg => PITCH[cfg.type] / 1000;
+const gapOf = r => Math.max(0, r.cfg.gap || 0) / 1000;
 
 function makeRow(i, cfg) {
   const color = COL[cfg.type];
@@ -246,7 +280,7 @@ function sizeRow(r) {
   buildModules(r);
   // the row above hangs from this row's top edge
   const above = rows[r.i - 1];
-  if (above && above.pivot.parent === r.pivot) above.pivot.position.set(0, p, 0);
+  if (above && above.pivot.parent === r.pivot) above.pivot.position.set(0, p + gapOf(above), 0);
 }
 
 // ---------- procedural modules ----------
@@ -372,7 +406,7 @@ function buildModules(r) {
   });
   r.pivot.add(group);
   controls.forEach((c, k) => { c.id = k; c.look = 'base'; });
-  r.mods = { group, meshes, controls };
+  r.mods = { group, meshes, controls, items };
   r.reached = new Set(state.reached[r.i] || []);
   r.touching = new Set();
   group.visible = state.showMods;
@@ -466,7 +500,7 @@ function rebuild() {
     anchor.add(base.pivot);
     for (let i = rows.length - 2; i >= 0; i--) {
       rows[i + 1].pivot.add(rows[i].pivot);
-      rows[i].pivot.position.set(0, rows[i + 1].p, 0);
+      rows[i].pivot.position.set(0, rows[i + 1].p + gapOf(rows[i]), 0);
     }
     while (state.folds.length < rows.length) state.folds.push(0);
     state.folds.length = rows.length;
@@ -521,10 +555,18 @@ function renderForm() {
     li.innerHTML = `<span class="n">${i + 1}</span>
       <select id="type-${i}" aria-label="Row ${i + 1} format"><option>3U</option><option>1U</option></select>
       <input id="hp-${i}" inputmode="numeric" aria-label="Row ${i + 1} width in HP" value="${cfg.hp}">
+      <input id="gap-${i}" inputmode="decimal" aria-label="Row ${i + 1} gap below in mm" value="${fmt(cfg.gap || 0)}"${i === state.rows.length - 1 ? ' disabled title="The base has no row below it"' : ''}>
       <span class="mm"></span>
       <button class="x" aria-label="Remove row ${i + 1}">×</button>`;
     ol.appendChild(li);
-    const sel = li.querySelector('select'), inp = li.querySelector('input'), mm = li.querySelector('.mm');
+    const sel = li.querySelector('select'), inp = li.querySelector(`#hp-${i}`), mm = li.querySelector('.mm');
+    const gapIn = li.querySelector(`#gap-${i}`);
+    gapIn.addEventListener('input', () => {
+      cfg.gap = num(gapIn.value, 0);
+      const r = rows[i], below = rows[i + 1];
+      if (r && below) r.pivot.position.set(0, below.p + gapOf(r), 0);
+      save(); renderTable();
+    });
     const showMm = () => {
       mm.textContent = `HP · ${fmt(cfg.hp * HP)} × ${fmt(panelH(cfg) * 1000, 2)} mm` + (i === state.rows.length - 1 ? ' · base' : '');
     };
@@ -581,6 +623,128 @@ function renderTable() {
   head.position.set(0, (state.eye || 1150) / 1000, 0);
 }
 
+// ---------- layout code ----------
+// RR1~<1U format i|p>~<depth mm>~<module seed>~<eye mm>~<rows>~<base x_y_z mm _yaw_lean deg>~<folds deg>
+// rows: 3U160 or 1U84g12 (g = gap below in mm), joined by _. Only URL-safe characters.
+const r1 = n => String(Math.round(n * 10) / 10);
+function encodeCode() {
+  const rowsTxt = state.rows.map(c => `${c.type}${c.hp}` + (c.gap ? `g${r1(c.gap)}` : '')).join('_');
+  const R = state.root;
+  const rootTxt = [R.x * 1000, R.y * 1000, R.z * 1000].map(v => String(Math.round(v)))
+    .concat([r1(R.yaw * DEG), r1(R.lean * DEG)]).join('_');
+  const folds = state.rows.map((_, i) => r1((state.folds[i] || 0) * DEG)).join('_');
+  return ['RR1', state.oneU === 'pulplogic' ? 'p' : 'i', r1(state.depth), state.seed | 0, state.eye || 0, rowsTxt, rootTxt, folds].join('~');
+}
+function decodeCode(text) {
+  const m = String(text).match(/RR1~[A-Za-z0-9~_.\-]+/);
+  if (!m) throw new Error('That does not look like a layout code. It should start with RR1~');
+  const f = m[0].split('~');
+  if (f.length < 8) throw new Error('The code is incomplete. Copy all of it and try again.');
+  const nums = s => s.split('_').map(Number);
+  const rows = f[5].split('_').map(t => {
+    const mm = t.match(/^(3U|1U)(\d+)(?:g([\d.]+))?$/);
+    if (!mm) throw new Error(`Row "${t}" in the code is not readable.`);
+    return { type: mm[1], hp: Math.max(1, +mm[2]), gap: mm[3] ? +mm[3] : 0 };
+  });
+  const root = nums(f[6]), folds = nums(f[7]);
+  if (root.length < 5 || root.some(v => !isFinite(v)) || folds.some(v => !isFinite(v))) throw new Error('The positions in the code are not readable.');
+  return {
+    oneU: f[1] === 'p' ? 'pulplogic' : 'intellijel', depth: +f[2] || 0, seed: +f[3] || 1, eye: +f[4] || null,
+    rows, root: { x: root[0] / 1000, y: root[1] / 1000, z: root[2] / 1000, yaw: root[3] / DEG, lean: root[4] / DEG },
+    folds: rows.map((_, i) => (folds[i] || 0) / DEG)
+  };
+}
+function loadCode(text) {
+  const d = decodeCode(text);
+  Object.assign(state, d, { reached: {} });
+  $('oneu').value = state.oneU;
+  $('depth').value = fmt(state.depth);
+  rebuild();
+}
+const shareMsg = t => { $('sharemsg').textContent = t; };
+function shareLink() { return location.origin + location.pathname + '#L=' + encodeCode(); }
+function updateCode() { const el = $('code'); if (el) el.value = encodeCode(); }
+async function copyText(text, what, field) {
+  try { await navigator.clipboard.writeText(text); shareMsg(`${what} copied. Paste it into a message to send it.`); }
+  catch (e) {
+    if (field) { field.value = text; field.focus(); field.select(); }
+    shareMsg(`Copying was blocked. The ${what.toLowerCase()} is selected in the box; copy it from there.`);
+  }
+}
+$('copylink').addEventListener('click', () => copyText(shareLink(), 'Link', $('code')));
+$('copycode').addEventListener('click', () => copyText(encodeCode(), 'Code', $('code')));
+$('loadcode').addEventListener('click', () => {
+  try { loadCode($('pastecode').value); $('pastecode').value = ''; shareMsg('Layout loaded.'); }
+  catch (e) { shareMsg(e.message); }
+});
+function loadFromHash() {
+  const h = decodeURIComponent(location.hash || '');
+  if (!h.startsWith('#L=')) return;
+  const code = h.slice(3);
+  if (code === encodeCode()) return;
+  if (hadSaved && !confirm('Load the layout from this link? It replaces the layout saved in this browser.')) return;
+  try { loadCode(code); shareMsg('Loaded the layout from the link.'); }
+  catch (e) { shareMsg(e.message); }
+  history.replaceState(null, '', location.pathname);
+}
+
+// ---------- GLB export ----------
+// Rows keep the hinge hierarchy: base under the scene root, each row under the row below,
+// pivots on the hinge lines. Coordinates are the seated frame: origin on the floor under the eyes.
+function exportGLB(full) {
+  if (!base) return;
+  shareMsg('Building the file…');
+  const mats = new Map();
+  const mat = (hex, rough = 0.5, metal = 0) => {
+    const key = `${hex}-${rough}-${metal}`;
+    if (!mats.has(key)) mats.set(key, new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: metal, name: '#' + hex.toString(16).padStart(6, '0') }));
+    return mats.get(key);
+  };
+  const root = new THREE.Object3D(); root.name = 'RackReach';
+  const eye = new THREE.Object3D(); eye.name = 'Eye'; eye.position.set(0, (state.eye || 1150) / 1000, 0); root.add(eye);
+  const look = { panel: [0.55, 0.25], knob: [0.45, 0], pointer: [0.6, 0], nut: [0.3, 0.85], hole: [0.9, 0], led: [0.3, 0], button: [0.5, 0] };
+  const geoOf = { panel: GEO.panel, knob: GEO.cyl, pointer: GEO.box, nut: GEO.hex, hole: GEO.hole, led: GEO.ball, button: GEO.box };
+  const q = new THREE.Quaternion(), zAxis = new THREE.Vector3(0, 0, 1), m4 = new THREE.Matrix4();
+  let parent = root, triangles = 0, objects = 0;
+  const addMesh = (to, geo, material, name, pos) => {
+    const mesh = new THREE.Mesh(geo, material); mesh.name = name;
+    if (pos) mesh.position.copy(pos);
+    to.add(mesh); objects++;
+    triangles += (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+  };
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    const node = new THREE.Object3D();
+    node.name = `Row${String(i + 1).padStart(2, '0')}_${r.cfg.type}_${r.cfg.hp}HP${r === base ? '_base' : ''}`;
+    node.position.copy(r.pivot.position);
+    node.quaternion.copy(r.pivot.quaternion);
+    parent.add(node);
+    const h = panelH(r.cfg), dep = state.depth / 1000;
+    if (dep > 0) addMesh(node, new THREE.BoxGeometry(r.w, h * 0.85, dep).translate(0, r.p / 2, -0.002 - dep / 2), mat(r.color, 0.8), 'ModuleDepth');
+    if (!full) {
+      addMesh(node, new THREE.BoxGeometry(r.w, h, 0.002).translate(0, r.p / 2, -0.001), mat(r.color), 'Panel');
+    } else {
+      const mods = new THREE.Object3D(); mods.name = 'Modules'; node.add(mods);
+      Object.entries(r.mods.items).forEach(([kind, list]) => list.forEach((it, k) => {
+        const geo = geoOf[kind].clone().applyMatrix4(m4.compose(new THREE.Vector3(), q.setFromAxisAngle(zAxis, it.rotZ), new THREE.Vector3(it.sx, it.sy, it.sz)));
+        addMesh(mods, geo, mat(it.color, ...look[kind]), `${kind}_${k + 1}`, new THREE.Vector3(it.x, it.y, it.z));
+      }));
+    }
+    parent = node;
+  }
+  new GLTFExporter().parse(root, result => {
+    const blob = new Blob([result], { type: 'model/gltf-binary' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `rack-reach-${full ? 'full' : 'rows'}.glb`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    shareMsg(`Saved ${a.download}: ${objects} objects, ${Math.round(triangles).toLocaleString('sv-SE')} triangles, ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB.`);
+  }, err => shareMsg(`Export failed: ${err.message || err}`), { binary: true });
+}
+$('glbrows').addEventListener('click', () => exportGLB(false));
+$('glbfull').addEventListener('click', () => exportGLB(true));
+
 // ---------- controllers ----------
 const factory = new XRControllerModelFactory();
 const handFactory = new XRHandModelFactory();
@@ -629,7 +793,7 @@ function pointerAngle(h, r) {
   hp.addScaledVector(dirV, h.g.dist);
   const parent = r.pivot.parent;
   parent.updateMatrixWorld();
-  hingeM.copy(parent.matrixWorld).multiply(new THREE.Matrix4().makeTranslation(0, rows[r.i + 1].p, 0));
+  hingeM.copy(parent.matrixWorld).multiply(new THREE.Matrix4().makeTranslation(r.pivot.position.x, r.pivot.position.y, r.pivot.position.z));
   hingeInv.copy(hingeM).invert();
   hp.applyMatrix4(hingeInv);
   return Math.atan2(hp.z, hp.y);
@@ -769,6 +933,8 @@ $('vr').addEventListener('click', () => start('vr'));
 
 // ---------- loop ----------
 rebuild();
+loadFromHash();
+window.addEventListener('hashchange', loadFromHash);
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
