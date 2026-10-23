@@ -28,10 +28,16 @@
     border-radius: 6px; padding: 7px 9px; font-variant-numeric: tabular-nums; }
   input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--u1); outline-offset: 2px; }
   ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  li, .listhead { display: grid; grid-template-columns: 2.2em 5.5em 5.5em 5.5em 1fr auto; gap: 10px; align-items: center; }
-  .listhead { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  /* rem, not em: the header and the rows have different font sizes but must share columns */
+  li, .listhead { display: grid; grid-template-columns: 2.6rem 6rem 5.5rem 6.5rem minmax(0, 1fr) 2.6rem; gap: 10px; align-items: center; }
+  li select, li input { width: 100%; min-width: 0; }
+  .listhead { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .listhead span { padding-left: 10px; }      /* line up with the text inside the inputs */
+  .listhead span:first-child { padding-left: 12px; }
+  li input:disabled { opacity: 0.4; }
   @media (max-width: 560px) {
-    li, .listhead { grid-template-columns: 2.2em 1fr 1fr 1fr auto; }
+    li, .listhead { grid-template-columns: 2.6rem 1fr 1fr 1fr 2.6rem; }
     li .mm { grid-column: 2 / -1; grid-row: 2; }
     .listhead .mmh { display: none; }
   }
@@ -96,7 +102,7 @@
       <button id="clearreach" class="ghost">Clear reach marks</button>
     </div>
     <h2>Rows, top to bottom. The last row is the base.</h2>
-    <div class="listhead" aria-hidden="true"><span>#</span><span>Format</span><span>HP</span><span>Gap below</span><span class="mmh">Size</span><span></span></div>
+    <div class="listhead" aria-hidden="true"><span>#</span><span>Format</span><span>HP</span><span>Gap below mm</span><span class="mmh">Size</span><span aria-hidden="true"></span></div>
     <ol id="rowlist"></ol>
     <div class="actions">
       <button id="add3" class="ghost">+ 3U row</button>
@@ -568,7 +574,7 @@ function renderForm() {
       save(); renderTable();
     });
     const showMm = () => {
-      mm.textContent = `HP · ${fmt(cfg.hp * HP)} × ${fmt(panelH(cfg) * 1000, 2)} mm` + (i === state.rows.length - 1 ? ' · base' : '');
+      mm.textContent = `${fmt(cfg.hp * HP)} × ${fmt(panelH(cfg) * 1000, 2)} mm` + (i === state.rows.length - 1 ? ' · base' : '');
     };
     sel.value = cfg.type;
     showMm();
