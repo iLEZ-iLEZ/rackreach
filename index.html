@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Box Fit XR</title>
+<style>
+  :root {
+    --bg: #eef1f3; --panel: #ffffff; --fg: #1b2128; --muted: #5d6873;
+    --line: #d3d9de; --a: #e8630a; --b: #0e9fb8; --btn: #1b2128; --btnfg: #ffffff;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14181c; --panel: #1d2329; --fg: #e8ecef; --muted: #98a3ad;
+      --line: #2e363e; --a: #ff8a3d; --b: #3cd2ea; --btn: #e8ecef; --btnfg: #14181c; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: grid; gap: 20px; }
+  h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; }
+  .sub { margin: 2px 0 0; color: var(--muted); }
+  .boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  fieldset { margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+    padding: 14px 16px 16px; display: grid; gap: 10px; min-width: 0; }
+  legend { font-weight: 650; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  label { display: grid; gap: 3px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  input { font: inherit; font-size: 18px; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; width: 100%; font-variant-numeric: tabular-nums; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  button { font: inherit; font-weight: 650; font-size: 18px; border: 0; border-radius: 8px; padding: 14px 22px;
+    background: var(--btn); color: var(--btnfg); cursor: pointer; }
+  button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  #status { color: var(--muted); font-size: 14px; margin: 0; }
+  #view { height: 340px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--panel); touch-action: none; }
+  #view canvas { display: block; }
+  .help { border-top: 1px solid var(--line); padding-top: 12px; }
+  .help h2 { font-size: 15px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .help dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+  .help dt { font-weight: 650; }
+  .help dd { margin: 0; color: var(--muted); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Box Fit XR</h1>
+    <p class="sub">Two boxes at real scale. Grab them and move them around your room.</p>
+  </header>
+
+  <div class="boxes">
+    <fieldset>
+      <legend><span class="dot" style="background:var(--a)"></span><input id="a-name" aria-label="Name of box A" style="font-size:16px;padding:4px 8px" value="Panel"></legend>
+      <div class="row">
+        <label for="a-w">Width mm<input id="a-w" inputmode="decimal" value="2"></label>
+        <label for="a-d">Depth mm<input id="a-d" inputmode="decimal" value="128,5"></label>
+        <label for="a-h">Height mm<input id="a-h" inputmode="decimal" value="813"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend><span class="dot" style="background:var(--b)"></span><input id="b-name" aria-label="Name of box B" style="font-size:16px;padding:4px 8px" value="Box B"></legend>
+      <div class="row">
+        <label for="b-w">Width mm<input id="b-w" inputmode="decimal" value="600"></label>
+        <label for="b-d">Depth mm<input id="b-d" inputmode="decimal" value="400"></label>
+        <label for="b-h">Height mm<input id="b-h" inputmode="decimal" value="750"></label>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="actions">
+    <button id="ar" disabled>Enter passthrough</button>
+    <button id="vr" class="secondary" disabled>Enter VR</button>
+  </div>
+  <p id="status">Checking for WebXR…</p>
+
+  <div id="view" aria-label="Desktop preview of the two boxes. Drag to orbit."></div>
+
+  <section class="help">
+    <h2>In the headset</h2>
+    <dl>
+      <dt>Trigger or grip</dt><dd>Point at a box and hold to grab it. Boxes always stay upright.</dd>
+      <dt>Thumbstick</dt><dd>While holding: left/right turns the box, up/down pushes it away or pulls it closer.</dd>
+      <dt>A / X</dt><dd>Set the box you're pointing at (or holding) down on the floor.</dd>
+      <dt>B / Y</dt><dd>Bring both boxes back in front of you.</dd>
+      <dt>Label</dt><dd>Shows the size and how high the bottom of the box sits above the floor.</dd>
+    </dl>
+  </section>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+const $ = id => document.getElementById(id);
+const statusEl = $('status');
+const say = t => { statusEl.textContent = t; };
+const COLORS = [0xff7a1a, 0x22d3ee];
+const FIELDS = ['name', 'w', 'd', 'h'];
+
+// ---------- persistence (per browser, optional) ----------
+try {
+  const saved = JSON.parse(localStorage.getItem('boxfit') || 'null');
+  if (saved) ['a', 'b'].forEach(k => FIELDS.forEach(f => { if (saved[k] && saved[k][f] != null) $(`${k}-${f}`).value = saved[k][f]; }));
+} catch (e) {}
+function save() {
+  try {
+    const o = {};
+    ['a', 'b'].forEach(k => { o[k] = {}; FIELDS.forEach(f => o[k][f] = $(`${k}-${f}`).value); });
+    localStorage.setItem('boxfit', JSON.stringify(o));
+  } catch (e) {}
+}
+
+const num = s => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) && n > 0 ? n : 1; };
+const fmt = n => String(Math.round(n * 10) / 10).replace('.', ',');
+
+// ---------- renderer / scene ----------
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 50);
+camera.position.set(1.4, 1.3, 1.9);
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 0.4, 0);
+orbit.update();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.4));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(1, 3, 2);
+scene.add(sun);
+const grid = new THREE.GridHelper(4, 40, 0x8a949e, 0x4a525a);
+scene.add(grid);
+
+function resize() {
+  if (renderer.xr.isPresenting) return;
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(view);
+
+// ---------- boxes ----------
+const unit = new THREE.BoxGeometry(1, 1, 1);
+const unitEdges = new THREE.EdgesGeometry(unit);
+
+function makeBox(i) {
+  const color = COLORS[i];
+  const group = new THREE.Group();
+  const fill = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({
+    color, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+  const edges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color }));
+  // invisible, slightly fatter volume so thin panels are easy to point at
+  const pick = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024; canvas.height = 200;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  label.renderOrder = 10;
+  label.scale.set(0.32, 0.0625, 1);
+  group.add(fill, edges, pick, label);
+  const box = { i, group, fill, edges, pick, label, canvas, tex, color, w: 1, d: 1, h: 1, name: '', last: '' };
+  pick.userData.box = box;
+  scene.add(group);
+  return box;
+}
+const boxes = [makeBox(0), makeBox(1)];
+boxes[0].group.position.set(-0.35, 0, 0);
+boxes[1].group.position.set(0.45, 0, 0);
+
+function applyDims() {
+  ['a', 'b'].forEach((k, i) => {
+    const b = boxes[i];
+    b.name = $(`${k}-name`).value.trim() || (i ? 'Box B' : 'Box A');
+    b.w = num($(`${k}-w`).value) / 1000;
+    b.d = num($(`${k}-d`).value) / 1000;
+    b.h = num($(`${k}-h`).value) / 1000;
+    b.fill.scale.set(b.w, b.h, b.d);
+    b.fill.position.y = b.h / 2;
+    b.edges.scale.copy(b.fill.scale);
+    b.edges.position.y = b.h / 2;
+    b.pick.scale.set(Math.max(b.w, 0.05), Math.max(b.h, 0.05), Math.max(b.d, 0.05));
+    b.pick.position.y = b.h / 2;
+    b.label.position.y = b.h + 0.06;
+    b.last = '';
+  });
+  save();
+}
+['a', 'b'].forEach(k => FIELDS.forEach(f => $(`${k}-${f}`).addEventListener('input', applyDims)));
+applyDims();
+
+const tv = new THREE.Vector3();
+function drawLabel(b) {
+  b.group.getWorldPosition(tv);
+  const bottom = Math.round(tv.y * 1000);
+  const line2 = `${fmt(b.w * 1000)} × ${fmt(b.d * 1000)} × ${fmt(b.h * 1000)} mm    ↑ ${bottom} mm`;
+  const key = b.name + line2;
+  if (key === b.last) return;
+  b.last = key;
+  const c = b.canvas.getContext('2d');
+  c.clearRect(0, 0, 1024, 200);
+  c.fillStyle = 'rgba(12,14,17,0.82)';
+  c.beginPath(); c.roundRect(0, 0, 1024, 200, 28); c.fill();
+  c.fillStyle = '#' + b.color.toString(16).padStart(6, '0');
+  c.fillRect(0, 0, 18, 200);
+  c.fillStyle = '#ffffff';
+  c.font = '600 72px system-ui, sans-serif';
+  c.fillText(b.name, 48, 84);
+  c.fillStyle = '#d4dbe1';
+  c.font = '54px system-ui, sans-serif';
+  c.fillText(line2, 48, 162);
+  b.tex.needsUpdate = true;
+}
+
+// ---------- controllers ----------
+const factory = new XRControllerModelFactory();
+const raycaster = new THREE.Raycaster();
+const rotM = new THREE.Matrix4();
+const q = new THREE.Quaternion(), pq = new THREE.Quaternion(), yq = new THREE.Quaternion();
+const eul = new THREE.Euler();
+const UP = new THREE.Vector3(0, 1, 0);
+
+const hands = [0, 1].map(i => {
+  const ctrl = renderer.xr.getController(i);
+  const grip = renderer.xr.getControllerGrip(i);
+  grip.add(factory.createControllerModel(grip));
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
+  line.scale.z = 3;
+  ctrl.add(line);
+  scene.add(ctrl, grip);
+  const h = { ctrl, line, source: null, held: null, hover: null, prev: [] };
+  ctrl.addEventListener('connected', e => { h.source = e.data; line.visible = !!e.data.gamepad; });
+  ctrl.addEventListener('disconnected', () => { release(h); h.source = null; });
+  ctrl.addEventListener('selectstart', () => grab(h));
+  ctrl.addEventListener('selectend', () => release(h));
+  ctrl.addEventListener('squeezestart', () => grab(h));
+  ctrl.addEventListener('squeezeend', () => release(h));
+  return h;
+});
+
+function grab(h) {
+  if (h.held || !h.hover) return;
+  const b = h.hover;
+  hands.forEach(o => { if (o !== h && o.held === b) release(o); });
+  h.ctrl.attach(b.group);
+  h.held = b;
+}
+function release(h) {
+  if (!h.held) return;
+  scene.attach(h.held.group);
+  keepUpright(h.held.group);
+  h.held = null;
+}
+function keepUpright(g, extraYaw = 0) {
+  g.getWorldQuaternion(q);
+  eul.setFromQuaternion(q, 'YXZ');
+  eul.x = 0; eul.z = 0; eul.y += extraYaw;
+  q.setFromEuler(eul);
+  g.parent.getWorldQuaternion(pq);
+  g.quaternion.copy(pq.invert().multiply(q));
+}
+function dropToFloor(b) {
+  hands.forEach(o => { if (o.held === b) release(o); });
+  b.group.position.y = 0;
+}
+
+function placeInFront() {
+  hands.forEach(release);
+  const cam = renderer.xr.getCamera();
+  const p = new THREE.Vector3(), dir = new THREE.Vector3();
+  cam.getWorldPosition(p);
+  cam.getWorldDirection(dir);
+  dir.y = 0;
+  if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
+  dir.normalize();
+  const right = new THREE.Vector3().crossVectors(dir, UP).normalize();
+  const yaw = Math.atan2(dir.x, dir.z) + Math.PI;
+  boxes.forEach((b, i) => {
+    b.group.position.copy(p).addScaledVector(dir, 1.0).addScaledVector(right, i ? 0.45 : -0.35);
+    b.group.position.y = 0;
+    b.group.rotation.set(0, yaw, 0);
+  });
+}
+
+function updateHand(h, dt) {
+  const gp = h.source && h.source.gamepad;
+  // hover
+  if (!h.held) {
+    rotM.identity().extractRotation(h.ctrl.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(h.ctrl.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotM);
+    const hits = raycaster.intersectObjects(boxes.map(b => b.pick), false);
+    h.hover = hits.length ? hits[0].object.userData.box : null;
+    h.line.scale.z = hits.length ? hits[0].distance : 3;
+  } else {
+    h.hover = h.held;
+  }
+  if (!gp) return;
+  const ax = gp.axes.length > 3 ? gp.axes[2] : 0;
+  const ay = gp.axes.length > 3 ? gp.axes[3] : 0;
+  if (h.held) {
+    const g = h.held.group;
+    if (Math.abs(ay) > 0.15) g.position.z = Math.min(-0.05, g.position.z + ay * dt * 0.9);
+    keepUpright(g, Math.abs(ax) > 0.15 ? -ax * dt * 1.6 : 0);
+  }
+  const pressed = gp.buttons.map(b => b.pressed);
+  const edge = n => pressed[n] && !h.prev[n];
+  if (edge(4) && h.hover) dropToFloor(h.hover);   // A / X
+  if (edge(5)) placeInFront();                     // B / Y
+  h.prev = pressed;
+}
+
+// ---------- XR sessions ----------
+let placeIn = 0;
+async function start(mode) {
+  applyDims();
+  let session;
+  try {
+    session = await navigator.xr.requestSession(mode === 'ar' ? 'immersive-ar' : 'immersive-vr',
+      { requiredFeatures: ['local-floor'], optionalFeatures: ['hand-tracking'] });
+  } catch (err) {
+    say(`The headset refused the session: ${err.message}`);
+    return;
+  }
+  scene.background = mode === 'vr' ? new THREE.Color(0x1e2328) : null;
+  grid.visible = mode !== 'ar';
+  orbit.enabled = false;
+  await renderer.xr.setSession(session);
+  placeIn = 4;
+  session.addEventListener('end', () => {
+    hands.forEach(release);
+    scene.background = null;
+    grid.visible = true;
+    orbit.enabled = true;
+    resize();
+  });
+}
+$('ar').addEventListener('click', () => start('ar'));
+$('vr').addEventListener('click', () => start('vr'));
+
+(async () => {
+  if (!window.isSecureContext) { say('This page has to be opened over https for the headset to allow it.'); return; }
+  if (!navigator.xr) { say('No WebXR in this browser. Open this page in the Meta Quest Browser.'); return; }
+  const [ar, vr] = await Promise.all([
+    navigator.xr.isSessionSupported('immersive-ar').catch(() => false),
+    navigator.xr.isSessionSupported('immersive-vr').catch(() => false)]);
+  $('ar').disabled = !ar;
+  $('vr').disabled = !vr;
+  say(ar ? 'Ready. Put the headset on and press Enter passthrough.'
+    : vr ? 'Passthrough is not available here, but VR is.'
+    : 'WebXR exists but no headset was found. Open this page on the Quest.');
+})();
+
+// ---------- loop ----------
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (renderer.xr.isPresenting) {
+    if (placeIn > 0 && --placeIn === 0) placeInFront();
+    hands.forEach(h => updateHand(h, dt));
+  }
+  boxes.forEach(b => {
+    const active = hands.some(h => h.hover === b || h.held === b);
+    b.fill.material.opacity = active ? 0.55 : 0.35;
+    drawLabel(b);
+  });
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
