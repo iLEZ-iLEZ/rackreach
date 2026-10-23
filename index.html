@@ -121,22 +121,34 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 
 const $ = id => document.getElementById(id);
 const say = t => { $('status').textContent = t; };
-const HP = 5.08, H3U = 128.5, ONE_U = { intellijel: 39.65, pulplogic: 43.18 };
+const HP = 5.08;
+const PANEL = { '3U': 128.5 };
+const ONE_U = { intellijel: 39.65, pulplogic: 43.18 };
+const PITCH = { '3U': 133.35, '1U': 44.45 };   // rail-to-rail row height the panels sit in
 const COL = { '3U': 0xff7a1a, '1U': 0x22d3ee };
 const DEG = 180 / Math.PI;
+const FOLD_MAX = 170 / DEG;
 const fmt = (n, d = 1) => String(Math.round(n * 10 ** d) / 10 ** d).replace('.', ',');
 const num = (s, def) => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) && n >= 0 ? n : def; };
 
 // ---------- state ----------
+// rows: top to bottom. root: pose of the base (last row) in the seated frame. folds: hinge angle per row (radians, relative to row below).
 const DEFAULT = () => ({
   oneU: 'intellijel', depth: 50, eye: null,
   rows: ['3U', '1U', '3U', '1U', '3U', '1U', '3U', '3U'].map(type => ({ type, hp: 160 })),
-  layout: null
+  root: { x: 0, y: 0.70, z: -0.6, yaw: 0, lean: 0 },
+  folds: []
 });
-let state;
-try { state = JSON.parse(localStorage.getItem('rackreach') || 'null'); } catch (e) {}
-if (!state || !Array.isArray(state.rows)) state = DEFAULT();
-function save() { try { localStorage.setItem('rackreach', JSON.stringify(state)); } catch (e) {} }
+let state = null;
+try { state = JSON.parse(localStorage.getItem('rackreach2') || 'null'); } catch (e) {}
+if (!state || !Array.isArray(state.rows)) {
+  state = DEFAULT();
+  try {   // keep the row list from the previous version if there is one
+    const old = JSON.parse(localStorage.getItem('rackreach') || 'null');
+    if (old && Array.isArray(old.rows)) { state.rows = old.rows; state.oneU = old.oneU || state.oneU; state.depth = old.depth ?? state.depth; }
+  } catch (e) {}
+}
+function save() { try { localStorage.setItem('rackreach2', JSON.stringify(state)); } catch (e) {} }
 
 // ---------- scene ----------
 const view = $('view');
@@ -148,7 +160,7 @@ view.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 50);
-camera.position.set(1.3, 1.6, 0.9);
+camera.position.set(1.4, 1.5, 0.6);
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 0.95, -0.5);
 orbit.update();
@@ -172,99 +184,108 @@ function resize() {
 new ResizeObserver(resize).observe(view);
 
 // ---------- rows ----------
+// Each row has a pivot on its bottom hinge line (front face plane). The panel sits centred in its pitch above it.
+// The base's pivot hangs from the anchor; every other pivot hangs from the top of the row below.
 const unit = new THREE.BoxGeometry(1, 1, 1);
 const unitEdges = new THREE.EdgesGeometry(unit);
-let rows = [];
+let rows = [];          // same order as state.rows (top to bottom)
+let base = null;
 
-function rowHeight(cfg) { return (cfg.type === '3U' ? H3U : ONE_U[state.oneU]) / 1000; }
+const panelH = cfg => (cfg.type === '3U' ? PANEL['3U'] : ONE_U[state.oneU]) / 1000;
+const pitchH = cfg => PITCH[cfg.type] / 1000;
 
 function makeRow(i, cfg) {
   const color = COL[cfg.type];
-  const group = new THREE.Group();
+  const pivot = new THREE.Object3D();
   const face = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
   const faceEdges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color }));
   const body = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, depthWrite: false }));
   const bodyEdges = new THREE.LineSegments(unitEdges, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+  const hinge = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-0.5, 0, 0), new THREE.Vector3(0.5, 0, 0)]),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
   const pick = new THREE.Mesh(unit, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
   const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 160;
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
   const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
   label.renderOrder = 10;
   label.scale.set(0.28, 0.04375, 1);
-  group.add(face, faceEdges, body, bodyEdges, pick, label);
-  const r = { i, cfg, group, face, faceEdges, body, bodyEdges, pick, label, canvas, tex, color, last: '' };
+  pivot.add(face, faceEdges, body, bodyEdges, hinge, pick, label);
+  const r = { i, cfg, pivot, face, faceEdges, body, bodyEdges, hinge, pick, label, canvas, tex, color, last: '', parent: null };
   pick.userData.row = r;
-  scene.add(group);
   sizeRow(r);
   return r;
 }
 
 function sizeRow(r) {
-  const w = r.cfg.hp * HP / 1000, h = rowHeight(r.cfg), t = 0.002, dep = state.depth / 1000;
-  r.w = w; r.h = h;
-  r.face.scale.set(w, h, t); r.face.position.set(0, 0, -t / 2);
+  const w = r.cfg.hp * HP / 1000, h = panelH(r.cfg), p = pitchH(r.cfg), t = 0.002, dep = state.depth / 1000;
+  r.w = w; r.p = p;
+  r.face.scale.set(w, h, t); r.face.position.set(0, p / 2, -t / 2);
   r.faceEdges.scale.copy(r.face.scale); r.faceEdges.position.copy(r.face.position);
   r.body.visible = r.bodyEdges.visible = dep > 0;
-  r.body.scale.set(w, h * 0.85, Math.max(dep, 0.001)); r.body.position.set(0, 0, -t - dep / 2);
+  r.body.scale.set(w, h * 0.85, Math.max(dep, 0.001)); r.body.position.set(0, p / 2, -t - dep / 2);
   r.bodyEdges.scale.copy(r.body.scale); r.bodyEdges.position.copy(r.body.position);
+  r.hinge.scale.set(w, 1, 1);
   const pd = Math.max(t + dep, 0.05);
-  r.pick.scale.set(w, Math.max(h, 0.04), pd); r.pick.position.set(0, 0, -pd / 2 + 0.01);
-  r.label.position.set(-w / 2 - 0.16, 0, 0);
+  r.pick.scale.set(w, p, pd); r.pick.position.set(0, p / 2, -pd / 2 + 0.01);
+  r.label.position.set(-w / 2 - 0.16, p / 2, 0);
   r.last = '';
+  // the row above hangs from this row's top edge
+  const above = rows[r.i - 1];
+  if (above && above.pivot.parent === r.pivot) above.pivot.position.set(0, p, 0);
 }
 
-function defaultLocal(i) {
-  // stacked wall, 600 mm in front of the eyes, bottom row centre around 720 mm
-  let y = 0.70;
-  for (let j = state.rows.length - 1; j > i; j--) y += rowHeight(state.rows[j]) + 0.005;
-  y += rowHeight(state.rows[i]) / 2;
-  return new THREE.Matrix4().makeTranslation(0, y, -0.6);
+function applyPose() {
+  const R = state.root;
+  base.pivot.position.set(R.x, R.y, R.z);
+  base.pivot.rotation.set(R.lean, R.yaw, 0, 'YXZ');
+  rows.forEach(r => { if (r !== base) r.pivot.rotation.set(state.folds[r.i] || 0, 0, 0); });
 }
 
-const tmpS = new THREE.Vector3();
-function applyLayout() {
-  anchor.updateMatrixWorld();
-  rows.forEach((r, i) => {
-    const m = new THREE.Matrix4();
-    const saved = state.layout && state.layout[i];
-    if (saved) m.fromArray(saved);
-    else if (state.layout) m.makeTranslation(0.9, 1.0, -0.6);
-    else m.copy(defaultLocal(i));
-    m.premultiply(anchor.matrixWorld);
-    m.decompose(r.group.position, r.group.quaternion, tmpS);
-    r.group.scale.set(1, 1, 1);
-  });
-}
-
-function captureLayout() {
-  anchor.updateMatrixWorld();
-  const inv = anchor.matrixWorld.clone().invert();
-  state.layout = rows.map(r => {
-    r.group.updateMatrixWorld();
-    return new THREE.Matrix4().multiplyMatrices(inv, r.group.matrixWorld).toArray().map(v => Math.round(v * 1e5) / 1e5);
-  });
+function readPose() {
+  const p = base.pivot;
+  const e = new THREE.Euler().setFromQuaternion(p.quaternion, 'YXZ');
+  state.root = { x: p.position.x, y: p.position.y, z: p.position.z, yaw: e.y, lean: e.x };
+  state.folds = rows.map(r => (r === base ? 0 : r.pivot.rotation.x));
   save();
   renderTable();
 }
 
 function rebuild() {
   hands.forEach(release);
-  rows.forEach(r => scene.remove(r.group));
-  rows = state.rows.map((cfg, i) => makeRow(i, cfg));
-  applyLayout();
+  rows.forEach(r => r.pivot.removeFromParent());
+  rows = [];
+  state.rows.forEach((cfg, i) => rows.push(makeRow(i, cfg)));
+  base = rows[rows.length - 1] || null;
+  if (base) {
+    anchor.add(base.pivot);
+    for (let i = rows.length - 2; i >= 0; i--) {
+      rows[i + 1].pivot.add(rows[i].pivot);
+      rows[i].pivot.position.set(0, rows[i + 1].p, 0);
+    }
+    while (state.folds.length < rows.length) state.folds.push(0);
+    state.folds.length = rows.length;
+    applyPose();
+  }
   renderForm();
   renderTable();
   save();
 }
 
 // ---------- labels ----------
-const tv = new THREE.Vector3(), tq = new THREE.Quaternion(), te = new THREE.Euler();
-function drawLabel(r) {
-  r.group.getWorldPosition(tv);
-  r.group.getWorldQuaternion(tq);
+const tv = new THREE.Vector3(), tq = new THREE.Quaternion(), te = new THREE.Euler(), aq = new THREE.Quaternion();
+function leanOf(r) {
+  anchor.getWorldQuaternion(aq);
+  r.pivot.getWorldQuaternion(tq);
+  tq.premultiply(aq.invert());
   te.setFromQuaternion(tq, 'YXZ');
-  const lean = Math.round(-te.x * DEG);
-  const text = `#${r.i + 1}  ${r.cfg.type} · ${r.cfg.hp} HP     lean ${lean}°     ↑ ${Math.round(tv.y * 1000)} mm`;
+  return -te.x * DEG;
+}
+function drawLabel(r) {
+  tv.set(0, r.p / 2, 0);
+  r.pivot.localToWorld(tv);
+  const name = r === base ? `#${r.i + 1} base` : `#${r.i + 1}`;
+  const text = `${name}  ${r.cfg.type} · ${r.cfg.hp} HP     lean ${Math.round(leanOf(r))}°     ↑ ${Math.round(tv.y * 1000)} mm`;
   if (text === r.last) return;
   r.last = text;
   const c = r.canvas.getContext('2d');
@@ -272,18 +293,18 @@ function drawLabel(r) {
   c.fillStyle = 'rgba(12,14,17,0.82)';
   c.beginPath(); c.roundRect(0, 0, 1024, 160, 24); c.fill();
   c.fillStyle = '#' + r.color.toString(16).padStart(6, '0');
-  c.fillRect(0, 0, 16, 160);
+  c.fillRect(0, 0, r === base ? 32 : 16, 160);
   c.fillStyle = '#ffffff';
-  c.font = '600 58px system-ui, sans-serif';
+  c.font = '600 56px system-ui, sans-serif';
   c.textBaseline = 'middle';
-  c.fillText(text, 40, 82);
+  c.fillText(text, 48, 82);
   r.tex.needsUpdate = true;
 }
 
 // ---------- form ----------
 $('oneu').value = state.oneU;
 $('depth').value = fmt(state.depth);
-$('oneu').addEventListener('change', e => { state.oneU = e.target.value; rows.forEach(sizeRow); renderForm(); save(); });
+$('oneu').addEventListener('change', e => { state.oneU = e.target.value; rows.forEach(sizeRow); renderForm(); renderTable(); save(); });
 $('depth').addEventListener('input', e => { state.depth = num(e.target.value, 0); rows.forEach(sizeRow); save(); });
 
 function renderForm() {
@@ -295,46 +316,51 @@ function renderForm() {
     li.innerHTML = `<span class="n">${i + 1}</span>
       <select id="type-${i}" aria-label="Row ${i + 1} format"><option>3U</option><option>1U</option></select>
       <input id="hp-${i}" inputmode="numeric" aria-label="Row ${i + 1} width in HP" value="${cfg.hp}">
-      <span class="mm" id="mm-${i}"></span>
+      <span class="mm"></span>
       <button class="x" aria-label="Remove row ${i + 1}">×</button>`;
     ol.appendChild(li);
     const sel = li.querySelector('select'), inp = li.querySelector('input'), mm = li.querySelector('.mm');
-    const showMm = () => { mm.textContent = `HP · ${fmt(cfg.hp * HP)} × ${fmt(rowHeight(cfg) * 1000, 2)} mm`; };
+    const showMm = () => {
+      mm.textContent = `HP · ${fmt(cfg.hp * HP)} × ${fmt(panelH(cfg) * 1000, 2)} mm` + (i === state.rows.length - 1 ? ' · base' : '');
+    };
     sel.value = cfg.type;
     showMm();
     sel.addEventListener('change', () => { cfg.type = sel.value; rebuild(); });
     inp.addEventListener('input', () => { cfg.hp = Math.max(1, Math.round(num(inp.value, cfg.hp))); showMm(); sizeRow(rows[i]); save(); });
     li.querySelector('button').addEventListener('click', () => {
       state.rows.splice(i, 1);
-      if (state.layout) state.layout.splice(i, 1);
+      state.folds.splice(i, 1);
       rebuild();
     });
   });
 }
-$('add3').addEventListener('click', () => { state.rows.push({ type: '3U', hp: 160 }); rebuild(); });
-$('add1').addEventListener('click', () => { state.rows.push({ type: '1U', hp: 160 }); rebuild(); });
+// new rows go on top, so the base stays the base
+$('add3').addEventListener('click', () => { state.rows.unshift({ type: '3U', hp: 160 }); state.folds.unshift(0); rebuild(); });
+$('add1').addEventListener('click', () => { state.rows.unshift({ type: '1U', hp: 160 }); state.folds.unshift(0); rebuild(); });
 $('reset').addEventListener('click', () => {
-  if (!confirm('Put all rows back in the default stack?')) return;
-  state.layout = null; rebuild();
+  if (!confirm('Straighten all rows and put the synth back in front of you?')) return;
+  const d = DEFAULT();
+  state.root = d.root;
+  state.folds = state.rows.map(() => 0);
+  applyPose(); readPose();
 });
 
 function renderTable() {
-  const note = $('layoutnote');
-  if (!state.layout) {
-    note.textContent = 'Nothing measured yet. Arrange the rows in the headset; the result appears here when you leave.';
-  } else {
-    note.textContent = `Measured from the floor point under your eyes, looking straight ahead.` +
-      (state.eye ? ` Eye height when seated: ${state.eye} mm.` : '') +
-      ` Positions are row centres. Lean is how far the top tips away from you.`;
-  }
-  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(), e = new THREE.Euler();
-  let html = '<tr><th>Row</th><th>Format</th><th>Forward mm</th><th>Height mm</th><th>Side mm</th><th>Lean °</th><th>Turn °</th><th>Roll °</th></tr>';
-  state.rows.forEach((cfg, i) => {
-    const m = state.layout && state.layout[i] ? new THREE.Matrix4().fromArray(state.layout[i]) : defaultLocal(i);
-    m.decompose(p, q, s);
-    e.setFromQuaternion(q, 'YXZ');
-    html += `<tr><td>${i + 1}</td><td>${cfg.type} · ${cfg.hp} HP</td><td>${Math.round(-p.z * 1000)}</td><td>${Math.round(p.y * 1000)}</td>` +
-      `<td>${Math.round(p.x * 1000)}</td><td>${Math.round(-e.x * DEG)}</td><td>${Math.round(e.y * DEG)}</td><td>${Math.round(e.z * DEG)}</td></tr>`;
+  if (!base) { $('layout').innerHTML = ''; return; }
+  anchor.updateMatrixWorld(true);
+  $('layoutnote').textContent =
+    `Measured from the floor point under your eyes, looking straight ahead.` +
+    (state.eye ? ` Eye height when seated: ${state.eye} mm.` : '') +
+    ` Hinge = the row's bottom edge on the front face plane. Fold is the angle against the row below. Lean is measured from vertical, top away from you.` +
+    ` Base turned ${Math.round(state.root.yaw * DEG)}°, offset ${Math.round(state.root.x * 1000)} mm sideways.`;
+  const v = new THREE.Vector3();
+  const toAnchor = (r, y) => { v.set(0, y, 0); r.pivot.localToWorld(v); return anchor.worldToLocal(v); };
+  let html = '<tr><th>Row</th><th>Format</th><th>Fold °</th><th>Lean °</th><th>Hinge fwd</th><th>Hinge height</th><th>Centre fwd</th><th>Centre height</th></tr>';
+  rows.forEach(r => {
+    const hg = toAnchor(r, 0).clone(), c = toAnchor(r, r.p / 2).clone();
+    const fold = r === base ? 'base' : Math.round(-r.pivot.rotation.x * DEG);
+    html += `<tr><td>${r.i + 1}</td><td>${r.cfg.type} · ${r.cfg.hp} HP</td><td>${fold}</td><td>${Math.round(leanOf(r))}</td>` +
+      `<td>${Math.round(-hg.z * 1000)}</td><td>${Math.round(hg.y * 1000)}</td><td>${Math.round(-c.z * 1000)}</td><td>${Math.round(c.y * 1000)}</td></tr>`;
   });
   $('layout').innerHTML = html;
   head.position.set(0, (state.eye || 1150) / 1000, 0);
@@ -354,42 +380,75 @@ const hands = [0, 1].map(i => {
   line.scale.z = 3;
   ctrl.add(line);
   scene.add(ctrl, grip);
-  const h = { ctrl, line, source: null, held: [], hover: null, prev: [] };
+  const h = { ctrl, line, source: null, held: null, hover: null, hitDist: 1, prev: [], g: {} };
   ctrl.addEventListener('connected', e => { h.source = e.data; });
   ctrl.addEventListener('disconnected', () => { release(h); h.source = null; });
-  ctrl.addEventListener('selectstart', () => grab(h, false));
+  ctrl.addEventListener('selectstart', () => grab(h));
   ctrl.addEventListener('selectend', () => release(h));
-  ctrl.addEventListener('squeezestart', () => grab(h, true));
+  ctrl.addEventListener('squeezestart', () => grab(h));
   ctrl.addEventListener('squeezeend', () => release(h));
   return h;
 });
 
-function grab(h, allowAll) {
-  if (h.held.length) return;
-  const targets = h.hover ? [h.hover] : (allowAll ? rows.slice() : []);
-  if (!targets.length) return;
-  hands.forEach(o => { if (o !== h && o.held.some(r => targets.includes(r))) release(o); });
-  targets.forEach(r => h.ctrl.attach(r.group));
-  h.held = targets;
-}
-function release(h) {
-  if (!h.held.length) return;
-  h.held.forEach(r => scene.attach(r.group));
-  h.held = [];
-  captureLayout();
+// controller pose expressed in the anchor (seated) frame
+const cm = new THREE.Matrix4(), ainv = new THREE.Matrix4();
+const cpos = new THREE.Vector3(), cquat = new THREE.Quaternion(), cscl = new THREE.Vector3(), ce = new THREE.Euler();
+function ctrlInAnchor(h) {
+  anchor.updateMatrixWorld();
+  ainv.copy(anchor.matrixWorld).invert();
+  cm.multiplyMatrices(ainv, h.ctrl.matrixWorld);
+  cm.decompose(cpos, cquat, cscl);
+  ce.setFromQuaternion(cquat, 'YXZ');
+  return cm;
 }
 
-const aq = new THREE.Quaternion(), lq = new THREE.Quaternion(), le = new THREE.Euler();
-const SNAP = 5 / DEG;
-function squareUp(r) {
-  hands.forEach(o => { if (o.held.includes(r)) release(o); });
-  anchor.getWorldQuaternion(aq);
-  lq.copy(aq).invert().multiply(r.group.quaternion);
-  le.setFromQuaternion(lq, 'YXZ');
-  le.set(Math.round(le.x / SNAP) * SNAP, Math.round(le.y / SNAP) * SNAP, 0, 'YXZ');
-  lq.setFromEuler(le);
-  r.group.quaternion.copy(aq).multiply(lq);
-  captureLayout();
+// the frame a row folds in: parent's pivot, moved up to the hinge line, before the row's own fold
+const hingeM = new THREE.Matrix4(), hingeInv = new THREE.Matrix4(), hp = new THREE.Vector3(), dirV = new THREE.Vector3();
+function pointerAngle(h, r) {
+  rotM.identity().extractRotation(h.ctrl.matrixWorld);
+  hp.setFromMatrixPosition(h.ctrl.matrixWorld);
+  dirV.set(0, 0, -1).applyMatrix4(rotM);
+  hp.addScaledVector(dirV, h.g.dist);
+  const parent = r.pivot.parent;
+  parent.updateMatrixWorld();
+  hingeM.copy(parent.matrixWorld).multiply(new THREE.Matrix4().makeTranslation(0, rows[r.i + 1].p, 0));
+  hingeInv.copy(hingeM).invert();
+  hp.applyMatrix4(hingeInv);
+  return Math.atan2(hp.z, hp.y);
+}
+
+function grab(h) {
+  if (h.held || !h.hover) return;
+  const r = h.hover;
+  hands.forEach(o => { if (o !== h && o.held) release(o); });
+  h.held = r;
+  h.g = { dist: h.hitDist };
+  if (r === base) {
+    const m = ctrlInAnchor(h);
+    h.g.off = base.pivot.position.clone().applyMatrix4(m.clone().invert());
+    h.g.yawOff = state.root.yaw - ce.y;
+    h.g.lean = state.root.lean;
+  } else {
+    h.g.angleOff = r.pivot.rotation.x - pointerAngle(h, r);
+  }
+}
+function release(h) {
+  if (!h.held) return;
+  h.held = null;
+  readPose();
+}
+
+function snap(r) {
+  const S = 5 / DEG;
+  hands.forEach(o => { if (o.held === r) release(o); });
+  if (r === base) {
+    state.root.lean = Math.round(state.root.lean / S) * S;
+    state.root.yaw = Math.round(state.root.yaw / S) * S;
+    applyPose();
+  } else {
+    r.pivot.rotation.x = Math.round(r.pivot.rotation.x / S) * S;
+  }
+  readPose();
 }
 
 function placeAnchor() {
@@ -404,36 +463,44 @@ function placeAnchor() {
   anchor.rotation.set(0, Math.atan2(-dir.x, -dir.z), 0);
   anchor.updateMatrixWorld();
   state.eye = Math.round(p.y * 1000);
-}
-function recentre() {
-  hands.forEach(release);
-  if (state.layout) captureLayout();
-  placeAnchor();
-  applyLayout();
   save();
 }
 
 function updateHand(h, dt) {
-  if (!h.held.length) {
+  if (!h.held) {
     rotM.identity().extractRotation(h.ctrl.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(h.ctrl.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(rotM);
     const hits = raycaster.intersectObjects(rows.map(r => r.pick), false);
     h.hover = hits.length ? hits[0].object.userData.row : null;
+    h.hitDist = hits.length ? hits[0].distance : 1;
     h.line.scale.z = hits.length ? hits[0].distance : 3;
   }
   const gp = h.source && h.source.gamepad;
-  if (!gp) return;
-  const ax = gp.axes.length > 3 ? gp.axes[2] : 0;
-  const ay = gp.axes.length > 3 ? gp.axes[3] : 0;
-  if (h.held.length) {
-    if (Math.abs(ay) > 0.15) h.held.forEach(r => { r.group.position.z = Math.min(-0.02, r.group.position.z + ay * dt * 0.8); });
-    if (Math.abs(ax) > 0.15 && h.held.length === 1) h.held[0].group.rotateX(-ax * dt * 1.0);
+  const ax = gp && gp.axes.length > 3 ? gp.axes[2] : 0;
+  const ay = gp && gp.axes.length > 3 ? gp.axes[3] : 0;
+  const dz = v => (Math.abs(v) > 0.15 ? v : 0);
+
+  if (h.held === base) {
+    if (dz(ay)) h.g.off.z = Math.min(-0.05, h.g.off.z + ay * dt * 0.8);
+    if (dz(ax)) h.g.lean = THREE.MathUtils.clamp(h.g.lean - ax * dt * 0.8, -FOLD_MAX / 2, FOLD_MAX / 2);
+    const m = ctrlInAnchor(h);
+    const p = h.g.off.clone().applyMatrix4(m);
+    state.root.x = p.x; state.root.y = Math.max(0, p.y); state.root.z = p.z;
+    state.root.yaw = ce.y + h.g.yawOff;
+    state.root.lean = h.g.lean;
+    applyPose();
+  } else if (h.held) {
+    if (dz(ax)) h.g.angleOff -= ax * dt * 0.8;
+    const a = pointerAngle(h, h.held) + h.g.angleOff;
+    h.held.pivot.rotation.x = THREE.MathUtils.clamp(a, -FOLD_MAX, FOLD_MAX);
   }
+
+  if (!gp) return;
   const pressed = gp.buttons.map(b => b.pressed);
   const edge = n => pressed[n] && !h.prev[n];
-  if (edge(4)) { const r = h.held.length === 1 ? h.held[0] : h.hover; if (r) squareUp(r); }
-  if (edge(5)) recentre();
+  if (edge(4)) { const r = h.held || h.hover; if (r) snap(r); }
+  if (edge(5)) { hands.forEach(release); placeAnchor(); renderTable(); }
   h.prev = pressed;
 }
 
@@ -453,10 +520,8 @@ async function start(mode) {
   placeIn = 4;
   session.addEventListener('end', () => {
     hands.forEach(release);
-    if (state.layout || rows.length) captureLayout();
     anchor.position.set(0, 0, 0); anchor.rotation.set(0, 0, 0);
-    applyLayout();
-    renderTable();
+    if (base) readPose();
     scene.background = null; grid.visible = true; head.visible = true; orbit.enabled = true;
     resize();
     say('Layout saved. The table below has the measurements.');
@@ -483,11 +548,11 @@ const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (renderer.xr.isPresenting) {
-    if (placeIn > 0 && --placeIn === 0) { placeAnchor(); applyLayout(); save(); }
+    if (placeIn > 0 && --placeIn === 0) placeAnchor();
     hands.forEach(h => updateHand(h, dt));
   }
   rows.forEach(r => {
-    const active = hands.some(h => h.hover === r || h.held.includes(r));
+    const active = hands.some(h => h.hover === r || h.held === r);
     r.face.material.opacity = active ? 0.7 : 0.45;
     drawLabel(r);
   });
