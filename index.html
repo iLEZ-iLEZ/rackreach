@@ -78,6 +78,13 @@
         <input id="depth" inputmode="decimal" size="6">
       </label>
     </div>
+    <div class="actions">
+      <label for="showmods" style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:15px;color:var(--fg)">
+        <input type="checkbox" id="showmods" style="width:20px;height:20px"> Fill rows with example modules
+      </label>
+      <button id="shuffle" class="ghost">Shuffle modules</button>
+      <button id="clearreach" class="ghost">Clear reach marks</button>
+    </div>
     <h2>Rows, top to bottom. The last row is the base.</h2>
     <ol id="rowlist"></ol>
     <div class="actions">
@@ -107,6 +114,8 @@
       <dt>The base</dt><dd>The bottom row. Grab it (trigger or grip) and it moves with your hand. Turn your wrist left/right to turn the synth, tip it up/down to tilt the base. Both rotate around the base's bottom front edge. Sideways roll is ignored.</dd>
       <dt>Base + thumbstick</dt><dd>Left/right fine-tunes the tilt. Up/down pushes the synth away or pulls it closer.</dd>
       <dt>Any other row</dt><dd>Grab it and pull towards you or push away to fold it at its hinge. Every row above it follows. Thumbstick left/right fine-tunes the fold.</dd>
+      <dt>Reach test</dt><dd>Touch knobs, jacks and buttons with your fingertip (put the controllers down for hand tracking) or with the front tip of a controller. They light yellow while touched and stay green once reached, with a buzz on the controller. Whatever stays grey is out of reach.</dd>
+      <dt>Thumbstick click</dt><dd>Clears the reach marks.</dd>
       <dt>A / X</dt><dd>Snaps the fold of the row you're pointing at to the nearest 5°. On the base it also squares up the turn.</dd>
       <dt>B / Y</dt><dd>Sit where you'll sit, look straight ahead, press. The synth is placed relative to your head again.</dd>
       <dt>Label</dt><dd>Row number, size, how far it leans back from vertical, and the height of its centre above the floor.</dd>
@@ -118,6 +127,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 
 const $ = id => document.getElementById(id);
 const say = t => { $('status').textContent = t; };
@@ -148,6 +158,9 @@ if (!state || !Array.isArray(state.rows)) {
     if (old && Array.isArray(old.rows)) { state.rows = old.rows; state.oneU = old.oneU || state.oneU; state.depth = old.depth ?? state.depth; }
   } catch (e) {}
 }
+if (state.seed == null) state.seed = 1;
+if (state.showMods == null) state.showMods = true;
+if (!state.reached || typeof state.reached !== 'object') state.reached = {};
 function save() { try { localStorage.setItem('rackreach2', JSON.stringify(state)); } catch (e) {} }
 
 // ---------- scene ----------
@@ -230,9 +243,201 @@ function sizeRow(r) {
   r.pick.scale.set(w, p, pd); r.pick.position.set(0, p / 2, -pd / 2 + 0.01);
   r.label.position.set(-w / 2 - 0.16, p / 2, 0);
   r.last = '';
+  buildModules(r);
   // the row above hangs from this row's top edge
   const above = rows[r.i - 1];
   if (above && above.pivot.parent === r.pivot) above.pivot.position.set(0, p, 0);
+}
+
+// ---------- procedural modules ----------
+// Everything is in the row pivot's frame: x along the row, y up from the hinge, z out of the panel face.
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const choose = (R, a) => a[Math.floor(R() * a.length)];
+const GEO = {
+  panel: new THREE.BoxGeometry(1, 1, 1).translate(0, 0, -0.5),                       // front face at z = 0
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 20).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+  hex: new THREE.CylinderGeometry(1, 1, 1, 6).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+  hole: new THREE.CylinderGeometry(1, 1, 1, 12).rotateX(Math.PI / 2).translate(0, 0, 0.5),
+  ball: new THREE.SphereGeometry(1, 10, 8),
+  box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5)
+};
+const MAT = {
+  panel: new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.25 }),
+  knob: new THREE.MeshStandardMaterial({ roughness: 0.45 }),
+  pointer: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  nut: new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.85 }),
+  hole: new THREE.MeshBasicMaterial({ color: 0x050505 }),
+  led: new THREE.MeshBasicMaterial(),
+  button: new THREE.MeshStandardMaterial({ roughness: 0.5 })
+};
+const PANEL_COLS = [0x2a2d31, 0xd9dcdf, 0x161616, 0xb4b9be, 0x5e2a2a, 0x27405e, 0xe6dfcc, 0x3d4a3a];
+const KNOB_COLS = [0x111111, 0xf0f0f0, 0x8a8f94, 0xc9302c, 0x2f6fb5, 0xe8b130, 0x111111, 0x111111];
+const LED_COLS = [0xff3b30, 0x34c759, 0xff9500, 0x0a84ff];
+const NUT_COL = 0xc4c8cc, BTN_COLS = [0x111111, 0xdddddd, 0xc9302c];
+const TOUCH_COL = new THREE.Color(0xffe14d), REACH_COL = new THREE.Color(0x3ddc84);
+const MOD_KINDS = ['panel', 'knob', 'pointer', 'nut', 'hole', 'led', 'button'];
+
+function buildModules(r) {
+  if (r.mods) { r.mods.group.removeFromParent(); Object.values(r.mods.meshes).forEach(m => m.dispose()); }
+  const R = rng((state.seed | 0) * 1000003 + r.i * 7919 + r.cfg.hp * 31 + (r.cfg.type === '3U' ? 1 : 2));
+  const mm = 0.001, HPmm = HP;
+  const rowW = r.cfg.hp * HPmm, H = panelH(r.cfg) / mm, P = r.p / mm, cy = P / 2;
+  const items = Object.fromEntries(MOD_KINDS.map(k => [k, []]));
+  const controls = [];
+  const put = (kind, x, y, z, sx, sy, sz, color, rotZ = 0) => {
+    items[kind].push({ x: x * mm, y: y * mm, z: z * mm, sx: sx * mm, sy: sy * mm, sz: sz * mm, color, rotZ });
+    return items[kind].length - 1;
+  };
+  const spread = (n, a, b) => Array.from({ length: n }, (_, k) => a + (k + 0.5) * (b - a) / n);
+
+  const knob = (x, y, rad, h) => {
+    const col = choose(R, KNOB_COLS), ang = (R() * 1.5 - 0.75) * Math.PI;
+    const idx = put('knob', x, y, 0, rad, rad, h, col);
+    put('pointer', x - Math.sin(ang) * rad * 0.5, y + Math.cos(ang) * rad * 0.5, h, 0.9, rad * 0.9, 0.5, 0xffffff, ang);
+    controls.push({ mesh: 'knob', idx, x: x * mm, y: y * mm, r: rad * mm, h: h * mm, base: col });
+  };
+  const jack = (x, y) => {
+    const idx = put('nut', x, y, 0, 3.6, 3.6, 2, NUT_COL);
+    put('hole', x, y, 2, 1.8, 1.8, 0.3, 0x050505);
+    controls.push({ mesh: 'nut', idx, x: x * mm, y: y * mm, r: 3.6 * mm, h: 2.3 * mm, base: NUT_COL });
+  };
+  const led = (x, y) => put('led', x, y, 0.8, 1.5, 1.5, 1.5, choose(R, LED_COLS));
+  const button = (x, y) => {
+    const col = choose(R, BTN_COLS);
+    const idx = put('button', x, y, 0, 6, 6, 5, col);
+    controls.push({ mesh: 'button', idx, x: x * mm, y: y * mm, r: 3.5 * mm, h: 5 * mm, base: col });
+  };
+
+  const widths = r.cfg.type === '3U' ? [4, 6, 8, 8, 10, 10, 12, 14, 16, 20] : [4, 6, 8, 10, 12];
+  let hpLeft = r.cfg.hp, start = 0;
+  while (hpLeft > 0) {
+    let w = Math.min(choose(R, widths), hpLeft);
+    const blank = w < 4 || R() < 0.06;
+    const wmm = w * HPmm - 0.3;
+    const x0 = -rowW / 2 + start * HPmm + w * HPmm / 2;
+    put('panel', x0, cy, 0, wmm, H, 2, choose(R, PANEL_COLS));
+    if (!blank) {
+      const uw = wmm - 3, xl = x0 - uw / 2, xr = x0 + uw / 2;
+      if (r.cfg.type === '3U') {
+        const top = cy + H / 2 - 12, bot = cy - H / 2 + 12;
+        const split = bot + (top - bot) * (0.35 + R() * 0.25);   // knobs above, jacks below
+        const big = w >= 8 && R() < 0.5;
+        const kr = big ? 7.5 : 5, ks = big ? 22 : 14, kh = big ? 15 : 12;
+        const kc = Math.max(1, Math.floor(uw / ks)), krows = Math.max(1, Math.min(4, Math.floor((top - split - 4) / ks)));
+        spread(krows, top, split + 4).forEach(y => spread(kc, xl, xr).forEach(x => knob(x, y, kr, kh)));
+        let jtop = split - 2;
+        if (R() < 0.45) {                                           // a row of LEDs or buttons
+          const y = split - 5;
+          if (R() < 0.6) spread(Math.max(1, Math.floor(uw / 7)), xl, xr).forEach(x => led(x, y));
+          else spread(Math.max(1, Math.floor(uw / 12)), xl, xr).forEach(x => button(x, y));
+          jtop = split - 11;
+        }
+        const jc = Math.max(1, Math.floor(uw / 12.5)), jrows = Math.max(1, Math.min(4, Math.floor((jtop - bot) / 14)));
+        spread(jrows, jtop, bot).forEach(y => spread(jc, xl, xr).forEach(x => jack(x, y)));
+      } else {
+        spread(Math.max(1, Math.floor(uw / 12.5)), xl, xr).forEach(x => {
+          const k = R();
+          if (k < 0.55) jack(x, cy); else if (k < 0.85) knob(x, cy, 4.5, 10); else led(x, cy);
+        });
+      }
+    }
+    start += w; hpLeft -= w;
+  }
+
+  const group = new THREE.Group();
+  const meshes = {};
+  const m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), scl = new THREE.Vector3(), col = new THREE.Color(), zAxis = new THREE.Vector3(0, 0, 1);
+  const geoOf = { panel: GEO.panel, knob: GEO.cyl, pointer: GEO.box, nut: GEO.hex, hole: GEO.hole, led: GEO.ball, button: GEO.box };
+  MOD_KINDS.forEach(kind => {
+    const list = items[kind];
+    if (!list.length) return;
+    const mesh = new THREE.InstancedMesh(geoOf[kind], MAT[kind], list.length);
+    list.forEach((it, k) => {
+      pos.set(it.x, it.y, it.z); q.setFromAxisAngle(zAxis, it.rotZ); scl.set(it.sx, it.sy, it.sz);
+      mesh.setMatrixAt(k, m4.compose(pos, q, scl));
+      mesh.setColorAt(k, col.setHex(it.color));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.frustumCulled = false;
+    meshes[kind] = mesh;
+    group.add(mesh);
+  });
+  r.pivot.add(group);
+  controls.forEach((c, k) => { c.id = k; c.look = 'base'; });
+  r.mods = { group, meshes, controls };
+  r.reached = new Set(state.reached[r.i] || []);
+  r.touching = new Set();
+  group.visible = state.showMods;
+  r.face.visible = !state.showMods;
+  paintControls(r);
+}
+
+const tmpCol = new THREE.Color();
+function paintControls(r) {
+  if (!r.mods) return;
+  const dirty = new Set();
+  r.mods.controls.forEach(c => {
+    const look = r.touching.has(c.id) ? 'touch' : r.reached.has(c.id) ? 'reach' : 'base';
+    if (look === c.look && !paintControls.force) return;
+    c.look = look;
+    const mesh = r.mods.meshes[c.mesh];
+    mesh.setColorAt(c.idx, look === 'touch' ? TOUCH_COL : look === 'reach' ? REACH_COL : tmpCol.setHex(c.base));
+    dirty.add(mesh);
+  });
+  dirty.forEach(m => { m.instanceColor.needsUpdate = true; });
+}
+
+// fingertip (hand tracking) or controller tip against every control
+const tipW = new THREE.Vector3(), tipL = new THREE.Vector3();
+function touchTest() {
+  const tips = [];
+  hands.forEach(h => {
+    if (!h.source) return;
+    const joint = h.hand.joints && h.hand.joints['index-finger-tip'];
+    if (h.source.hand && joint && joint.visible) tips.push({ h, p: joint.getWorldPosition(new THREE.Vector3()) });
+    else if (h.source.gamepad) tips.push({ h, p: h.ctrl.getWorldPosition(new THREE.Vector3()) });
+  });
+  let newReach = false;
+  rows.forEach(r => {
+    if (!r.mods || !r.mods.group.visible) return;
+    r.pivot.updateWorldMatrix(true, false);
+    const now = new Set();
+    tips.forEach(t => {
+      tipL.copy(t.p); r.pivot.worldToLocal(tipL);
+      if (Math.abs(tipL.x) > r.w / 2 + 0.02 || tipL.y < -0.02 || tipL.y > r.p + 0.02 || tipL.z < -0.006 || tipL.z > 0.05) return;
+      r.mods.controls.forEach(c => {
+        const dx = tipL.x - c.x, dy = tipL.y - c.y;
+        if (dx * dx + dy * dy < (c.r + 0.006) ** 2 && tipL.z < c.h + 0.012) {
+          now.add(c.id);
+          if (!r.touching.has(c.id)) {
+            const act = t.h.source.gamepad && t.h.source.gamepad.hapticActuators && t.h.source.gamepad.hapticActuators[0];
+            try { if (act) act.pulse(0.35, 25); } catch (e) {}
+          }
+          if (!r.reached.has(c.id)) { r.reached.add(c.id); newReach = true; }
+        }
+      });
+    });
+    r.touching = now;
+    paintControls(r);
+  });
+  if (newReach) {
+    rows.forEach(r => { state.reached[r.i] = [...(r.reached || [])]; });
+    save();
+  }
+}
+
+function clearReach() {
+  state.reached = {};
+  rows.forEach(r => { if (r.reached) { r.reached.clear(); paintControls(r); } });
+  save(); renderTable();
 }
 
 function applyPose() {
@@ -304,7 +509,7 @@ function drawLabel(r) {
 // ---------- form ----------
 $('oneu').value = state.oneU;
 $('depth').value = fmt(state.depth);
-$('oneu').addEventListener('change', e => { state.oneU = e.target.value; rows.forEach(sizeRow); renderForm(); renderTable(); save(); });
+$('oneu').addEventListener('change', e => { state.oneU = e.target.value; state.reached = {}; rows.forEach(sizeRow); renderForm(); renderTable(); save(); });
 $('depth').addEventListener('input', e => { state.depth = num(e.target.value, 0); rows.forEach(sizeRow); save(); });
 
 function renderForm() {
@@ -325,18 +530,27 @@ function renderForm() {
     };
     sel.value = cfg.type;
     showMm();
-    sel.addEventListener('change', () => { cfg.type = sel.value; rebuild(); });
-    inp.addEventListener('input', () => { cfg.hp = Math.max(1, Math.round(num(inp.value, cfg.hp))); showMm(); sizeRow(rows[i]); save(); });
+    sel.addEventListener('change', () => { cfg.type = sel.value; delete state.reached[i]; rebuild(); });
+    inp.addEventListener('input', () => { cfg.hp = Math.max(1, Math.round(num(inp.value, cfg.hp))); showMm(); delete state.reached[i]; sizeRow(rows[i]); save(); renderTable(); });
     li.querySelector('button').addEventListener('click', () => {
       state.rows.splice(i, 1);
       state.folds.splice(i, 1);
+      state.reached = {};
       rebuild();
     });
   });
 }
 // new rows go on top, so the base stays the base
-$('add3').addEventListener('click', () => { state.rows.unshift({ type: '3U', hp: 160 }); state.folds.unshift(0); rebuild(); });
-$('add1').addEventListener('click', () => { state.rows.unshift({ type: '1U', hp: 160 }); state.folds.unshift(0); rebuild(); });
+$('add3').addEventListener('click', () => { state.rows.unshift({ type: '3U', hp: 160 }); state.folds.unshift(0); state.reached = {}; rebuild(); });
+$('add1').addEventListener('click', () => { state.rows.unshift({ type: '1U', hp: 160 }); state.folds.unshift(0); state.reached = {}; rebuild(); });
+$('showmods').checked = state.showMods;
+$('showmods').addEventListener('change', e => {
+  state.showMods = e.target.checked;
+  rows.forEach(r => { if (r.mods) r.mods.group.visible = state.showMods; r.face.visible = !state.showMods; });
+  save(); renderTable();
+});
+$('shuffle').addEventListener('click', () => { state.seed = Math.floor(Math.random() * 1e6); state.reached = {}; rows.forEach(buildModules); save(); renderTable(); });
+$('clearreach').addEventListener('click', clearReach);
 $('reset').addEventListener('click', () => {
   if (!confirm('Straighten all rows and put the synth back in front of you?')) return;
   const d = DEFAULT();
@@ -355,12 +569,13 @@ function renderTable() {
     ` Base turned ${Math.round(state.root.yaw * DEG)}°, offset ${Math.round(state.root.x * 1000)} mm sideways.`;
   const v = new THREE.Vector3();
   const toAnchor = (r, y) => { v.set(0, y, 0); r.pivot.localToWorld(v); return anchor.worldToLocal(v); };
-  let html = '<tr><th>Row</th><th>Format</th><th>Fold °</th><th>Lean °</th><th>Hinge fwd</th><th>Hinge height</th><th>Centre fwd</th><th>Centre height</th></tr>';
+  let html = '<tr><th>Row</th><th>Format</th><th>Fold °</th><th>Lean °</th><th>Hinge fwd</th><th>Hinge height</th><th>Centre fwd</th><th>Centre height</th>' + (state.showMods ? '<th>Reached</th>' : '') + '</tr>';
   rows.forEach(r => {
     const hg = toAnchor(r, 0).clone(), c = toAnchor(r, r.p / 2).clone();
     const fold = r === base ? 'base' : Math.round(-r.pivot.rotation.x * DEG);
     html += `<tr><td>${r.i + 1}</td><td>${r.cfg.type} · ${r.cfg.hp} HP</td><td>${fold}</td><td>${Math.round(leanOf(r))}</td>` +
-      `<td>${Math.round(-hg.z * 1000)}</td><td>${Math.round(hg.y * 1000)}</td><td>${Math.round(-c.z * 1000)}</td><td>${Math.round(c.y * 1000)}</td></tr>`;
+      `<td>${Math.round(-hg.z * 1000)}</td><td>${Math.round(hg.y * 1000)}</td><td>${Math.round(-c.z * 1000)}</td><td>${Math.round(c.y * 1000)}</td>` +
+      (state.showMods && r.mods ? `<td>${r.reached.size} / ${r.mods.controls.length}</td>` : '') + '</tr>';
   });
   $('layout').innerHTML = html;
   head.position.set(0, (state.eye || 1150) / 1000, 0);
@@ -368,6 +583,7 @@ function renderTable() {
 
 // ---------- controllers ----------
 const factory = new XRControllerModelFactory();
+const handFactory = new XRHandModelFactory();
 const raycaster = new THREE.Raycaster();
 const rotM = new THREE.Matrix4();
 const hands = [0, 1].map(i => {
@@ -379,8 +595,10 @@ const hands = [0, 1].map(i => {
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
   line.scale.z = 3;
   ctrl.add(line);
-  scene.add(ctrl, grip);
-  const h = { ctrl, line, source: null, held: null, hover: null, hitDist: 1, prev: [], g: {} };
+  const hand = renderer.xr.getHand(i);
+  hand.add(handFactory.createHandModel(hand, 'spheres'));
+  scene.add(ctrl, grip, hand);
+  const h = { ctrl, line, hand, source: null, held: null, hover: null, hitDist: 1, prev: [], g: {} };
   ctrl.addEventListener('connected', e => { h.source = e.data; });
   ctrl.addEventListener('disconnected', () => { release(h); h.source = null; });
   ctrl.addEventListener('selectstart', () => grab(h));
@@ -507,6 +725,7 @@ function updateHand(h, dt) {
   const edge = n => pressed[n] && !h.prev[n];
   if (edge(4)) { const r = h.held || h.hover; if (r) snap(r); }
   if (edge(5)) { hands.forEach(release); placeAnchor(); renderTable(); }
+  if (edge(3)) clearReach();
   h.prev = pressed;
 }
 
@@ -556,6 +775,7 @@ renderer.setAnimationLoop(() => {
   if (renderer.xr.isPresenting) {
     if (placeIn > 0 && --placeIn === 0) placeAnchor();
     hands.forEach(h => updateHand(h, dt));
+    touchTest();
   }
   rows.forEach(r => {
     const active = hands.some(h => h.hover === r || h.held === r);
