@@ -720,16 +720,23 @@ function exportGLB(full) {
   };
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
-    const node = new THREE.Object3D();
+    const h = panelH(r.cfg), dep = state.depth / 1000;
+    // Rows only: the panel mesh is the joint itself (pivot on the hinge, geometry built upwards).
+    // Full: an empty joint node per row, with the module meshes hanging under it.
+    let node;
+    if (!full) {
+      const geo = new THREE.BoxGeometry(r.w, h, 0.002).translate(0, r.p / 2, -0.001);
+      node = new THREE.Mesh(geo, mat(r.color));
+      objects++; triangles += geo.index.count / 3;
+    } else {
+      node = new THREE.Object3D();
+    }
     node.name = `Row${String(i + 1).padStart(2, '0')}_${r.cfg.type}_${r.cfg.hp}HP${r === base ? '_base' : ''}`;
     node.position.copy(r.pivot.position);
     node.quaternion.copy(r.pivot.quaternion);
     parent.add(node);
-    const h = panelH(r.cfg), dep = state.depth / 1000;
     if (dep > 0) addMesh(node, new THREE.BoxGeometry(r.w, h * 0.85, dep).translate(0, r.p / 2, -0.002 - dep / 2), mat(r.color, 0.8), 'ModuleDepth');
-    if (!full) {
-      addMesh(node, new THREE.BoxGeometry(r.w, h, 0.002).translate(0, r.p / 2, -0.001), mat(r.color), 'Panel');
-    } else {
+    if (full) {
       const mods = new THREE.Object3D(); mods.name = 'Modules'; node.add(mods);
       Object.entries(r.mods.items).forEach(([kind, list]) => list.forEach((it, k) => {
         const geo = geoOf[kind].clone().applyMatrix4(m4.compose(new THREE.Vector3(), q.setFromAxisAngle(zAxis, it.rotZ), new THREE.Vector3(it.sx, it.sy, it.sz)));
